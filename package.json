@@ -48,7 +48,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsup && chmod +x dist/cli/index.js",
+    "build": "tsup",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
