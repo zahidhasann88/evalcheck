@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+runs/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+.turbo/
+.tmp/
+
+# Local build notes
+build-docs.txt

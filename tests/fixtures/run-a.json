@@ -1,0 +1,343 @@
+{
+  "schemaVersion": "1.0",
+  "meta": {
+    "tool": {
+      "name": "evalcheck",
+      "version": "0.1.0"
+    },
+    "schemaVersion": "1.0",
+    "suiteName": "fixture-suite",
+    "suiteHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "runId": "run-a",
+    "startedAt": "2026-01-01T00:00:00.000Z",
+    "finishedAt": "2026-01-01T00:10:00.000Z",
+    "durationMs": 1200,
+    "node": "v20.0.0",
+    "platform": "linux-x64"
+  },
+  "totals": {
+    "cases": 4,
+    "passed": 3,
+    "failed": 1,
+    "flaky": 0,
+    "skipped": 0,
+    "errored": 0,
+    "passRate": 0.75,
+    "checks": 8,
+    "checksPassed": 6,
+    "checksFailed": 2,
+    "requests": 8
+  },
+  "cases": [
+    {
+      "id": "refund-policy",
+      "status": "passed",
+      "passRate": 1,
+      "repeat": 2,
+      "tags": [],
+      "checks": [
+        {
+          "id": "contains",
+          "type": "contains",
+          "passRate": 1,
+          "passCount": 2,
+          "total": 2,
+          "scores": [
+            1,
+            1
+          ],
+          "reasons": []
+        }
+      ],
+      "attempts": [
+        {
+          "index": 0,
+          "transportOk": true,
+          "status": 200,
+          "text": "refund within 30 days",
+          "latencyMs": 100,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "request": {
+            "method": "POST",
+            "url": "http://127.0.0.1:9999/chat",
+            "headers": {}
+          },
+          "checks": [
+            {
+              "id": "contains",
+              "type": "contains",
+              "pass": true,
+              "reason": "ok",
+              "details": {}
+            }
+          ],
+          "attempts": 1
+        },
+        {
+          "index": 1,
+          "transportOk": true,
+          "status": 200,
+          "text": "refund within 30 days",
+          "latencyMs": 110,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "request": {
+            "method": "POST",
+            "url": "http://127.0.0.1:9999/chat",
+            "headers": {}
+          },
+          "checks": [
+            {
+              "id": "contains",
+              "type": "contains",
+              "pass": true,
+              "reason": "ok",
+              "details": {}
+            }
+          ],
+          "attempts": 1
+        }
+      ],
+      "latencyMs": {
+        "min": 100,
+        "max": 110,
+        "mean": 105,
+        "p50": 110,
+        "p95": 110
+      },
+      "durationMs": 210
+    },
+    {
+      "id": "shipping",
+      "status": "failed",
+      "passRate": 0,
+      "repeat": 2,
+      "tags": [],
+      "checks": [
+        {
+          "id": "contains",
+          "type": "contains",
+          "passRate": 0,
+          "passCount": 0,
+          "total": 2,
+          "scores": [
+            0,
+            0
+          ],
+          "reasons": [
+            "response does not contain \"expected\""
+          ]
+        }
+      ],
+      "attempts": [
+        {
+          "index": 0,
+          "transportOk": true,
+          "status": 200,
+          "text": "shipping takes 3 days",
+          "latencyMs": 120,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "request": {
+            "method": "POST",
+            "url": "http://127.0.0.1:9999/chat",
+            "headers": {}
+          },
+          "checks": [
+            {
+              "id": "contains",
+              "type": "contains",
+              "pass": false,
+              "reason": "failed",
+              "details": {}
+            }
+          ],
+          "attempts": 1
+        },
+        {
+          "index": 1,
+          "transportOk": true,
+          "status": 200,
+          "text": "shipping takes 3 days",
+          "latencyMs": 130,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "request": {
+            "method": "POST",
+            "url": "http://127.0.0.1:9999/chat",
+            "headers": {}
+          },
+          "checks": [
+            {
+              "id": "contains",
+              "type": "contains",
+              "pass": false,
+              "reason": "failed",
+              "details": {}
+            }
+          ],
+          "attempts": 1
+        }
+      ],
+      "latencyMs": {
+        "min": 120,
+        "max": 130,
+        "mean": 125,
+        "p50": 130,
+        "p95": 130
+      },
+      "durationMs": 250
+    },
+    {
+      "id": "greeting",
+      "status": "passed",
+      "passRate": 1,
+      "repeat": 2,
+      "tags": [],
+      "checks": [
+        {
+          "id": "contains",
+          "type": "contains",
+          "passRate": 1,
+          "passCount": 2,
+          "total": 2,
+          "scores": [
+            1,
+            1
+          ],
+          "reasons": []
+        }
+      ],
+      "attempts": [
+        {
+          "index": 0,
+          "transportOk": true,
+          "status": 200,
+          "text": "hello there",
+          "latencyMs": 90,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "request": {
+            "method": "POST",
+            "url": "http://127.0.0.1:9999/chat",
+            "headers": {}
+          },
+          "checks": [
+            {
+              "id": "contains",
+              "type": "contains",
+              "pass": true,
+              "reason": "ok",
+              "details": {}
+            }
+          ],
+          "attempts": 1
+        },
+        {
+          "index": 1,
+          "transportOk": true,
+          "status": 200,
+          "text": "hello there",
+          "latencyMs": 95,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "request": {
+            "method": "POST",
+            "url": "http://127.0.0.1:9999/chat",
+            "headers": {}
+          },
+          "checks": [
+            {
+              "id": "contains",
+              "type": "contains",
+              "pass": true,
+              "reason": "ok",
+              "details": {}
+            }
+          ],
+          "attempts": 1
+        }
+      ],
+      "latencyMs": {
+        "min": 90,
+        "max": 95,
+        "mean": 92.5,
+        "p50": 95,
+        "p95": 95
+      },
+      "durationMs": 185
+    },
+    {
+      "id": "similar-case",
+      "status": "passed",
+      "passRate": 1,
+      "repeat": 2,
+      "tags": [],
+      "checks": [
+        {
+          "id": "similarity",
+          "type": "similarity",
+          "passRate": 1,
+          "passCount": 2,
+          "total": 2,
+          "scores": [
+            0.9,
+            0.9
+          ],
+          "reasons": []
+        }
+      ],
+      "attempts": [
+        {
+          "index": 0,
+          "transportOk": true,
+          "status": 200,
+          "text": "the same text",
+          "latencyMs": 100,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "request": {
+            "method": "POST",
+            "url": "http://127.0.0.1:9999/chat",
+            "headers": {}
+          },
+          "checks": [
+            {
+              "id": "similarity",
+              "type": "similarity",
+              "pass": true,
+              "reason": "ok",
+              "details": {}
+            }
+          ],
+          "attempts": 1
+        },
+        {
+          "index": 1,
+          "transportOk": true,
+          "status": 200,
+          "text": "the same text",
+          "latencyMs": 100,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "request": {
+            "method": "POST",
+            "url": "http://127.0.0.1:9999/chat",
+            "headers": {}
+          },
+          "checks": [
+            {
+              "id": "similarity",
+              "type": "similarity",
+              "pass": true,
+              "reason": "ok",
+              "details": {}
+            }
+          ],
+          "attempts": 1
+        }
+      ],
+      "latencyMs": {
+        "min": 100,
+        "max": 100,
+        "mean": 100,
+        "p50": 100,
+        "p95": 100
+      },
+      "durationMs": 200
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+name: streaming-bot
+description: Streaming (SSE) responses - the text is assembled from the deltas and the time to first token is measured.
+
+target:
+  url: http://127.0.0.1:8787/stream
+  method: POST
+  headers:
+    content-type: application/json
+  body:
+    message: "{{input}}"
+  response:
+    stream: sse
+    # Path to the incremental text inside a single SSE event.
+    chunkPath: "$.choices[0].delta.content"
+  timeoutMs: 15000
+  retries:
+    max: 1
+    on: [5xx, timeout]
+    backoffMs: 100
+
+defaults:
+  repeat: 3
+  checks:
+    - type: contains
+      id: has-answer
+      value: "."
+    - type: latency
+      id: ttft-budget
+      ttftMaxMs: 2000
+    - type: latency
+      id: total-budget
+      maxMs: 10000
+
+cases:
+  - id: streamed-refund
+    input: "What is your refund policy?"

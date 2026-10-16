@@ -1,0 +1,3 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`suite loader > exposes a stable, versioned error message 1`] = `"target.url: Required (suite.yaml: line 4, column 3)"`;

@@ -1,0 +1,82 @@
+export * from './types.js';
+export {
+  EvalcheckError,
+  ConfigError,
+  EndpointError,
+  GraderError,
+  EXIT_OK,
+  EXIT_CHECK_FAILED,
+  EXIT_CONFIG_ERROR,
+  EXIT_ENDPOINT_UNREACHABLE,
+  isConfigError,
+  isEndpointError,
+} from './errors.js';
+export { createLogger, silentLogger } from './logger.js';
+
+export {
+  loadSuite,
+  parseSuiteSource,
+  normalizeSuite,
+  safeParseSuite,
+  DEFAULT_EMBEDDING_MODEL,
+} from './config/loader.js';
+export { SuiteDefinitionSchema, CheckSchema } from './config/schema.js';
+export { loadDataset, parseCsv } from './config/dataset.js';
+export type { Dataset, DatasetOptions } from './config/dataset.js';
+
+export { createInterpolator, interpolateEnv, REDACTION_PLACEHOLDER } from './utils/interpolate.js';
+export { createRedactor, redactHeaders } from './utils/redact.js';
+export { hashSuite, canonicalJson, createRunId } from './utils/hash.js';
+export { jsonPathQuery, jsonPathFirst, jsonPathExists, parseJsonPath } from './utils/jsonpath.js';
+export {
+  tokenize,
+  countWords,
+  countChars,
+  applyNormalizers,
+  lexicalOverlap,
+  tokenF1,
+  rougeL,
+  jaccard,
+  luhnValid,
+  cardIssuer,
+} from './utils/text.js';
+export { percentile, mean, round, clamp, safeRatio } from './utils/stats.js';
+
+export { buildRequest } from './http/request.js';
+export { executeRequest } from './http/client.js';
+export { extractResponse, assembleSse } from './http/extract.js';
+export { parseSseChunk, isDoneEvent } from './http/sse.js';
+export type { HttpCallOptions, HttpOutcome } from './http/client.js';
+export type { ExtractionResult, ResponseSpec, SseAssembly } from './http/extract.js';
+
+export { graders, getGrader } from './graders/index.js';
+export { createLocalEmbeddingProvider, cosineSimilarity, defaultCacheDir } from './graders/embedding/local.js';
+export { detectPii } from './graders/pii.js';
+export { clearSchemaCache } from './graders/json-schema.js';
+export { clearCustomCheckCache, loadCustomCheck } from './graders/custom.js';
+export type { CustomCheckFn, CustomResponse, CustomContext, CustomVerdict } from './graders/custom.js';
+
+export { runSuite, runSuiteFile, selectCases, globToRegExp, computeTotals, RUN_SCHEMA_VERSION } from './runner/runner.js';
+export type { RunOptions } from './runner/runner.js';
+export { RateLimiter, pool } from './runner/limiter.js';
+
+export { startMockServer, createMockServer, answerFor } from './mock/server.js';
+export type { MockServerHandle, MockServerOptions } from './mock/server.js';
+
+export { compareRuns, parseThresholds, METRICS } from './compare/compare.js';
+export type { CompareOptions, MetricSpec } from './compare/compare.js';
+
+export { reportToConsole } from './report/console.js';
+export { reportToJson, parseRunFile, JSON_REPORT_SCHEMA_VERSION } from './report/json.js';
+export { reportToJunit } from './report/junit.js';
+export { reportToHtml, diffLines } from './report/html.js';
+
+export {
+  saveBaseline,
+  loadBaseline,
+  listBaselines,
+  baselineFilePath,
+  resolveBaselinePath,
+  DEFAULT_BASELINE_DIR,
+} from './baseline.js';
+export type { BaselineInfo, SaveBaselineOptions } from './baseline.js';

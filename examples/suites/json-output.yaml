@@ -1,0 +1,57 @@
+name: json-output
+description: Structured output checks - the endpoint must return a JSON document with a fixed shape.
+
+target:
+  url: http://127.0.0.1:8787/echo
+  method: POST
+  headers:
+    content-type: application/json
+  body:
+    message: "{{input}}"
+    user: "{{vars.user}}"
+  response:
+    # The extracted text is the `echo` object of the response.
+    textPath: "$.echo"
+  timeoutMs: 10000
+
+defaults:
+  repeat: 1
+  checks:
+    - type: json_schema
+      id: echo-shape
+      schema:
+        type: object
+        required: [message, user]
+        properties:
+          message:
+            type: string
+            minLength: 1
+          user:
+            type: string
+            pattern: "^u[0-9]+$"
+        additionalProperties: true
+    - type: json_path
+      id: message-present
+      path: "$.message"
+      exists: true
+
+cases:
+  - id: simple-message
+    input: "hello world"
+    vars:
+      user: u1
+
+  - id: unicode-message
+    input: "আমি বাংলায় লিখছি ✨"
+    vars:
+      user: u2
+
+  - id: long-message
+    input: "This message is quite a bit longer than the others and should still round trip."
+    vars:
+      user: u3
+    checks:
+      - type: length
+        id: message-length
+        min: 10
+        max: 200

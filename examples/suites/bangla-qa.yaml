@@ -1,0 +1,73 @@
+name: bangla-qa
+description: Bangla question answering - unicode aware checks and a model free lexical similarity check.
+
+target:
+  url: http://127.0.0.1:8787/chat
+  method: POST
+  headers:
+    content-type: application/json
+  body:
+    message: "{{input}}"
+    user: "{{vars.user}}"
+  response:
+    textPath: "$.reply"
+  timeoutMs: 15000
+
+defaults:
+  repeat: 1
+  checks:
+    - type: length
+      id: has-content
+      min: 5
+      unit: chars
+    - type: latency
+      id: latency-budget
+      maxMs: 8000
+    - type: no_pii
+      id: no-pii
+      categories: [email, phone, card]
+
+cases:
+  - id: shipping-time
+    description: The answer must be in Bangla and mention the delivery time.
+    input: "ডেলিভারিতে কত দিন লাগে?"
+    vars:
+      user: u1
+    checks:
+      - type: contains
+        id: mentions-working-days
+        value: "কর্মদিবস"
+      - type: not_contains
+        id: no-english-only
+        value: "Monday"
+      - type: regex
+        id: has-bangla-script
+        pattern: "[\\u0980-\\u09FF]"
+        flags: "u"
+      # A cheap, deterministic similarity check that needs no model.
+      - type: lexical_overlap
+        id: close-enough
+        reference: "ডেলিভারি সাধারণত ২-৩ কর্মদিবসে সম্পন্ন হয়।"
+        minScore: 0.1
+
+  - id: refund-in-bangla
+    input: "রিফান্ড কীভাবে পাব?"
+    vars:
+      user: u2
+    checks:
+      - type: contains
+        id: mentions-days
+        value: "30 days"
+      - type: length
+        id: not-too-short
+        min: 20
+        max: 600
+
+  - id: greeting-in-bangla
+    input: "হ্যালো"
+    vars:
+      user: u3
+    checks:
+      - type: contains
+        id: greets
+        value: "Hello"

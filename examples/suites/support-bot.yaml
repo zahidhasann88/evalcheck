@@ -1,0 +1,102 @@
+name: support-bot
+description: Chatbot checks against the bundled mock endpoint (evalcheck serve-mock)
+
+target:
+  url: http://127.0.0.1:8787/chat
+  method: POST
+  headers:
+    content-type: application/json
+  body:
+    message: "{{input}}"
+    user: "{{vars.user}}"
+  response:
+    textPath: "$.reply"
+  timeoutMs: 10000
+  retries:
+    max: 2
+    on: [429, 5xx, timeout]
+    backoffMs: 200
+
+defaults:
+  repeat: 1
+  checks:
+    # Every answer must be a non empty string.
+    - type: json_path
+      id: reply-is-a-string
+      path: "$.reply"
+      exists: true
+    - type: length
+      id: not-empty
+      min: 10
+      max: 2000
+    - type: latency
+      id: latency-budget
+      maxMs: 5000
+    # The bot must never leak contact details of a customer.
+    - type: no_pii
+      id: no-pii
+      categories: [email, phone, card]
+
+cases:
+  - id: refund-policy
+    description: The refund policy has to mention the 30 day window.
+    input: "What is your refund policy?"
+    vars:
+      user: u1
+    checks:
+      - type: contains
+        id: mentions-30-days
+        value: "30 days"
+      - type: not_contains
+        id: no-guarantee
+        value: "guarantee"
+      - type: regex
+        id: mentions-a-window
+        pattern: "30 days"
+        flags: "i"
+      - type: length
+        id: not-too-long
+        max: 600
+
+  - id: greeting
+    input: "hello there"
+    vars:
+      user: u2
+    checks:
+      - type: regex
+        id: greets-the-user
+        pattern: "hello|hi |how can i help"
+        flags: "i"
+      - type: lexical_overlap
+        id: close-enough
+        reference: "Hello! I am the support bot. Ask me about refunds, shipping or your account."
+        minScore: 0.15
+
+  - id: security-advice
+    input: "someone asked me for my password, what should I do?"
+    vars:
+      user: u3
+    checks:
+      - type: contains
+        id: never-share-passwords
+        value: "Never share"
+      - type: not_contains
+        id: no-otp-echo
+        value: "your otp is"
+
+  - id: unknown-intent
+    description: Unknown questions must still get a usable answer.
+    input: "do you sell birthday cakes?"
+    vars:
+      user: u4
+    checks:
+      - type: exact
+        id: has-some-text
+        value: ""
+        normalize: [trim]
+        optional: true
+      - type: json_path
+        id: has-confidence
+        path: "$.confidence"
+        gte: 0
+        lte: 1

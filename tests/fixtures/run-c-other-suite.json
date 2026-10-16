@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "1.0",
+  "meta": {
+    "tool": {
+      "name": "evalcheck",
+      "version": "0.1.0"
+    },
+    "schemaVersion": "1.0",
+    "suiteName": "fixture-suite",
+    "suiteHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "runId": "run-c",
+    "startedAt": "2026-01-01T00:00:00.000Z",
+    "finishedAt": "2026-01-02T00:20:00.000Z",
+    "durationMs": 1200,
+    "node": "v20.0.0",
+    "platform": "linux-x64"
+  },
+  "totals": {
+    "cases": 1,
+    "passed": 1,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "errored": 0,
+    "passRate": 1,
+    "checks": 2,
+    "checksPassed": 2,
+    "checksFailed": 0,
+    "requests": 2
+  },
+  "cases": [
+    {
+      "id": "refund-policy",
+      "status": "passed",
+      "passRate": 1,
+      "repeat": 2,
+      "tags": [],
+      "checks": [
+        {
+          "id": "contains",
+          "type": "contains",
+          "passRate": 1,
+          "passCount": 2,
+          "total": 2,
+          "scores": [
+            1,
+            1
+          ],
+          "reasons": []
+        }
+      ],
+      "attempts": [
+        {
+          "index": 0,
+          "transportOk": true,
+          "status": 200,
+          "text": "refund within 30 days",
+          "latencyMs": 100,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "request": {
+            "method": "POST",
+            "url": "http://127.0.0.1:9999/chat",
+            "headers": {}
+          },
+          "checks": [
+            {
+              "id": "contains",
+              "type": "contains",
+              "pass": true,
+              "reason": "ok",
+              "details": {}
+            }
+          ],
+          "attempts": 1
+        },
+        {
+          "index": 1,
+          "transportOk": true,
+          "status": 200,
+          "text": "refund within 30 days",
+          "latencyMs": 110,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "request": {
+            "method": "POST",
+            "url": "http://127.0.0.1:9999/chat",
+            "headers": {}
+          },
+          "checks": [
+            {
+              "id": "contains",
+              "type": "contains",
+              "pass": true,
+              "reason": "ok",
+              "details": {}
+            }
+          ],
+          "attempts": 1
+        }
+      ],
+      "latencyMs": {
+        "min": 100,
+        "max": 110,
+        "mean": 105,
+        "p50": 110,
+        "p95": 110
+      },
+      "durationMs": 210
+    }
+  ]
+}

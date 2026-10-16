@@ -1,0 +1,95 @@
+{
+  "name": "evalcheck",
+  "version": "0.1.0",
+  "description": "Deterministic, rule-based regression testing for AI-powered HTTP endpoints. No LLM calls, no judge models.",
+  "keywords": [
+    "ai",
+    "eval",
+    "evaluation",
+    "testing",
+    "regression",
+    "llm",
+    "deterministic",
+    "grader"
+  ],
+  "license": "MIT",
+  "author": "Zahid Hasan",
+  "homepage": "https://github.com/zahidhasann88/evalcheck#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zahidhasann88/evalcheck.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zahidhasann88/evalcheck/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@12.11.2",
+  "bin": {
+    "evalcheck": "./dist/cli/index.js"
+  },
+  "main": "./dist/core/index.js",
+  "module": "./dist/core/index.js",
+  "types": "./dist/core/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js",
+      "default": "./dist/core/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsup && chmod +x dist/cli/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:slow": "EVALCHECK_SLOW=1 vitest run",
+    "prepack": "pnpm run build",
+    "prepublishOnly": "pnpm run build"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "commander": "^12.1.0",
+    "undici": "^7.2.0",
+    "yaml": "^2.6.1",
+    "zod": "^3.24.1"
+  },
+  "peerDependencies": {
+    "@huggingface/transformers": "^3.3.3"
+  },
+  "peerDependenciesMeta": {
+    "@huggingface/transformers": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@huggingface/transformers": "^3.3.3",
+    "@types/node": "^20.17.10",
+    "eslint": "^9.17.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "vitest": "^2.1.8"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "onnxruntime-node",
+      "sharp",
+      "protobufjs"
+    ]
+  }
+}
