@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-28
+
 ### Added
 
 - **Conversations** - a case can use `turns` instead of `input` to send several messages in
@@ -123,5 +125,6 @@ The first release.
 - **Examples** - a chatbot suite, a JSON output suite, a streaming suite and
   a bundled mock endpoint.
 
-[Unreleased]: https://github.com/zahidhasann88/evalcheck/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/zahidhasann88/evalcheck/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/zahidhasann88/evalcheck/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/zahidhasann88/evalcheck/releases/tag/v0.1.0
