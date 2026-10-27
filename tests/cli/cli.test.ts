@@ -370,4 +370,83 @@ cases:
     expect(xml).toContain('<testsuites');
     expect(xml).toContain('name="a"');
   });
+  it('prints the suite JSON Schema and writes it to a file', async () => {
+    const code = await runCli(['schema']);
+    expect(code).toBe(0);
+    expect(JSON.parse(output).title).toBe('evalcheck suite');
+
+    const dir = await tempDir();
+    const file = path.join(dir, 'suite.schema.json');
+    expect(await runCli(['schema', '--out', file])).toBe(0);
+    expect(JSON.parse(await readFile(file, 'utf8')).$schema).toBe('http://json-schema.org/draft-07/schema#');
+  });
+
+  it('records a run and replays it without the endpoint', async () => {
+    server = await startTestServer((_req, res) => {
+      jsonResponse(res, 200, { reply: 'the expected text' });
+    });
+    const dir = await tempDir();
+    const file = path.join(dir, 'suite.yaml');
+    await writeFile(
+      file,
+      `
+name: recorded
+target:
+  url: ${server.url}
+  response:
+    textPath: "$.reply"
+cases:
+  - id: a
+    input: hi
+    checks:
+      - type: contains
+        value: expected
+`,
+      'utf8',
+    );
+    const recording = path.join(dir, 'recording.json');
+    expect(await runCli(['run', file, '--out', path.join(dir, 'runs'), '--record', recording])).toBe(0);
+    await server.close();
+    server = undefined;
+
+    expect(await runCli(['run', file, '--out', path.join(dir, 'runs'), '--replay', recording])).toBe(0);
+    expect(output).toContain('replayed from a recording');
+
+    expect(await runCli(['run', file, '--record', recording, '--replay', recording])).toBe(2);
+  });
+
+  it('writes a Markdown report', async () => {
+    server = await startTestServer((_req, res) => {
+      jsonResponse(res, 200, { reply: 'something else' });
+    });
+    const dir = await tempDir();
+    const file = path.join(dir, 'suite.yaml');
+    await writeFile(
+      file,
+      `
+name: markdown
+target:
+  url: ${server.url}
+  response:
+    textPath: "$.reply"
+cases:
+  - id: a
+    input: hi
+    checks:
+      - type: contains
+        value: expected
+`,
+      'utf8',
+    );
+    const report = path.join(dir, 'report.md');
+    const code = await runCli(['run', file, '--out', path.join(dir, 'runs'), '--format', 'markdown', '--out-file', report]);
+    expect(code).toBe(1);
+    const markdown = await readFile(report, 'utf8');
+    expect(markdown).toContain('<!-- evalcheck:markdown -->');
+    expect(markdown).toContain('<code>a</code>');
+
+    process.exitCode = 0;
+    expect(await runCli(['report', path.join(dir, 'runs', 'latest.json'), '--format', 'markdown'])).toBe(0);
+    expect(output).toContain('### ❌ evalcheck · markdown');
+  });
 });

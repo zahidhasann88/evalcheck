@@ -1,0 +1,101 @@
+name: evalcheck
+description: Run an evalcheck suite against your AI endpoint and report the result on the pull request.
+author: Zahid Hasan
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  suite:
+    description: Path to the suite file.
+    required: true
+  against:
+    description: Baseline to compare with (a saved baseline name such as "baseline", or a run file).
+    required: false
+    default: ''
+  fail-on-regression:
+    description: Fail the step when a case regresses against the baseline.
+    required: false
+    default: 'true'
+  args:
+    description: Extra arguments for "evalcheck run", for example "--repeat 3 --threshold latency_p95=+20%".
+    required: false
+    default: ''
+  comment:
+    description: Post the report as a pull request comment and update it on every run.
+    required: false
+    default: 'true'
+  github-token:
+    description: 'Token used to post the comment. Needs "pull-requests: write".'
+    required: false
+    default: ${{ github.token }}
+  version:
+    description: evalcheck version to run.
+    required: false
+    default: latest
+  working-directory:
+    description: Directory to run evalcheck in.
+    required: false
+    default: .
+
+outputs:
+  exit-code:
+    description: 'Exit code of "evalcheck run": 0 pass, 1 failures or regressions, 2 config error, 3 endpoint unreachable.'
+    value: ${{ steps.run.outputs.exit-code }}
+  report:
+    description: Path of the Markdown report.
+    value: ${{ steps.run.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        EVALCHECK_SUITE: ${{ inputs.suite }}
+        EVALCHECK_AGAINST: ${{ inputs.against }}
+        EVALCHECK_FAIL_ON_REGRESSION: ${{ inputs.fail-on-regression }}
+        EVALCHECK_ARGS: ${{ inputs.args }}
+        EVALCHECK_VERSION: ${{ inputs.version }}
+      run: |
+        report="$RUNNER_TEMP/evalcheck-report.md"
+        args=(run "$EVALCHECK_SUITE" --format markdown --out-file "$report")
+        if [ -n "$EVALCHECK_AGAINST" ]; then
+          args+=(--against "$EVALCHECK_AGAINST")
+          if [ "$EVALCHECK_FAIL_ON_REGRESSION" = "true" ]; then
+            args+=(--fail-on-regression)
+          fi
+        fi
+        read -r -a extra <<< "$EVALCHECK_ARGS"
+        set +e
+        npx --yes "evalcheck@$EVALCHECK_VERSION" "${args[@]}" "${extra[@]}"
+        code=$?
+        set -e
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        echo "report=$report" >> "$GITHUB_OUTPUT"
+        if [ -f "$report" ]; then
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - if: ${{ inputs.comment == 'true' && github.event.pull_request.number && steps.run.outputs.exit-code != '2' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPORT: ${{ steps.run.outputs.report }}
+        PR: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+      run: |
+        [ -f "$REPORT" ] || exit 0
+        export MARKER="$(head -n 1 "$REPORT")"
+        id="$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[] | select(.body | startswith(env.MARKER)) | .id' | head -n 1)"
+        if [ -n "$id" ]; then
+          gh api --method PATCH "repos/$REPO/issues/comments/$id" -F "body=@$REPORT" > /dev/null
+        else
+          gh api --method POST "repos/$REPO/issues/$PR/comments" -F "body=@$REPORT" > /dev/null
+        fi
+
+    - shell: bash
+      env:
+        CODE: ${{ steps.run.outputs.exit-code }}
+      run: exit "$CODE"

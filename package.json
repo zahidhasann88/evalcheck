@@ -39,6 +39,7 @@
       "import": "./dist/core/index.js",
       "default": "./dist/core/index.js"
     },
+    "./suite.schema.json": "./dist/suite.schema.json",
     "./package.json": "./package.json"
   },
   "files": [
@@ -48,7 +49,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node dist/cli/index.js schema --out dist/suite.schema.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

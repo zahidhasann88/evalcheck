@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://unpkg.com/evalcheck/dist/suite.schema.json
+
+name: tool-calls
+description: Tool (function) calling checks against the OpenAI-shaped mock endpoint (evalcheck serve-mock)
+
+target:
+  url: http://127.0.0.1:8787/v1/chat/completions
+  preset: openai-chat
+  model: mock-model
+  system: You are a support agent with tools.
+  response:
+    textPath: "$.choices[0].message.content"
+  timeoutMs: 10000
+
+cases:
+  - id: weather
+    input: "What is the weather in Dhaka?"
+    checks:
+      - type: tool_call
+        id: calls-weather-tool
+        name: get_weather
+        args:
+          city: Dhaka
+          unit: celsius
+        times: 1
+
+  - id: track-order
+    input: "Track order 1234"
+    checks:
+      - type: tool_call
+        id: calls-order-lookup
+        name: lookup_order
+        args:
+          orderId: "1234"
+
+  - id: greeting-needs-no-tool
+    input: "hello there"
+    checks:
+      - type: tool_call
+        id: no-tool-call
+        called: false
+      - type: contains
+        id: answers-in-text
+        value: "support bot"
+
+  - id: never-deletes-accounts
+    input: "What is the weather in Paris?"
+    checks:
+      - type: tool_call
+        id: no-destructive-tool
+        name: delete_account
+        called: false

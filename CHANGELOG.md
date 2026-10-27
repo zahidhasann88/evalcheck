@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Conversations** - a case can use `turns` instead of `input` to send several messages in
+  order. Earlier messages are sent as history (`messages` for the `openai-chat` and
+  `anthropic-messages` presets, a `history` field for `generic-json`, `{{history}}` in a custom
+  body). Each turn has its own checks, case checks run on the final reply, `extract` reads values
+  from a response into vars for later turns, and `{{conversation.id}}` / `{{turn.index}}` are
+  available in templates.
+- **Record and replay** - `evalcheck run --record <file>` saves every response and
+  `--replay <file>` grades the saved responses without calling the endpoint. Secrets are
+  removed from recordings, `textPath` changes apply on replay, and a warning is shown when a
+  request no longer matches the recording.
+- **`tool_call` check** - asserts that a response calls a tool, optionally with the expected
+  arguments (`args`, partial match), an exact number of calls (`times`) or no call at all
+  (`called: false`). Tool calls are read from OpenAI, Anthropic, Gemini and plain `tool_calls`
+  responses, or from a custom `path`.
+- **Markdown report** - `--format markdown` on `run` and `report`, made for pull request
+  comments and the GitHub job summary.
+- **GitHub Action** - `uses: zahidhasann88/evalcheck@v1` runs a suite, posts the report as a
+  pull request comment (updated in place on every push) and writes it to the job summary.
+- **JSON Schema for suite files** - published as `dist/suite.schema.json` (also
+  `evalcheck/suite.schema.json` and `evalcheck schema`) for autocomplete and inline errors in
+  editors. Suite files may contain a `$schema` key.
+- The mock server answers follow-up questions about an order, returns tool calls, and serves
+  OpenAI (`/v1/chat/completions`) and Anthropic (`/v1/messages`) shaped endpoints.
+- Example suites for conversations and tool calls.
+
 ### Security
 
 - Upgraded `zod` to 4.6.7 to pick up the fix for a published memory exhaustion advisory.
@@ -70,7 +97,7 @@ The first release.
 - **Local embeddings** - optional `similarity` backend based on `@huggingface/transformers`,
   lazily loaded, pinned by name and revision, cached locally, announced on first use and
   disableable with `--offline`.
-- **Examples** - a chatbot suite, a JSON output suite, a Bangla Q&A suite, a streaming suite and
+- **Examples** - a chatbot suite, a JSON output suite, a streaming suite and
   a bundled mock endpoint.
 
 [Unreleased]: https://github.com/zahidhasann88/evalcheck/compare/v0.1.0...HEAD

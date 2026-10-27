@@ -6,6 +6,7 @@ import { parseRunFile, reportToJson } from '../core/report/json.js';
 import { reportToJunit } from '../core/report/junit.js';
 import { reportToHtml } from '../core/report/html.js';
 import { reportToConsole } from '../core/report/console.js';
+import { reportToMarkdown } from '../core/report/markdown.js';
 import { writeArtifact } from './shared.js';
 
 export function registerReportCommand(program: Command): Command {
@@ -13,7 +14,7 @@ export function registerReportCommand(program: Command): Command {
     .command('report')
     .description('Generate a report from a stored run file')
     .argument('<runFile>', 'run file (JSON) produced by "evalcheck run"')
-    .option('--format <format>', 'console | json | junit | html', 'html')
+    .option('--format <format>', 'console | json | junit | html | markdown', 'html')
     .option('--out <file>', 'write the report to a file instead of stdout')
     .option('--baseline <file>', 'baseline run file used for the response diff')
     .option('--no-color', 'disable ANSI colors')
@@ -43,11 +44,14 @@ export function registerReportCommand(program: Command): Command {
         case 'junit':
           content = reportToJunit(run);
           break;
+        case 'markdown':
+          content = reportToMarkdown(run);
+          break;
         case 'console':
           content = reportToConsole(run, { color: options.color !== false && Boolean(process.stdout.isTTY) });
           break;
         default:
-          throw new Error(`Unknown report format "${format}". Use console, json, junit or html.`);
+          throw new Error(`Unknown report format "${format}". Use console, json, junit, html or markdown.`);
       }
 
       if (options.out) {

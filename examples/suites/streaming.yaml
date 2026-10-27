@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=https://unpkg.com/evalcheck/dist/suite.schema.json
+
 name: streaming-bot
 description: Streaming (SSE) responses - the text is assembled from the deltas and the time to first token is measured.
 

@@ -11,6 +11,7 @@ export const CHECK_TYPES = [
   'lexical_overlap',
   'no_pii',
   'custom',
+  'tool_call',
 ] as const;
 
 export type CheckType = (typeof CHECK_TYPES)[number];
@@ -126,6 +127,20 @@ export interface CustomCheck extends CheckBase {
   export?: string;
 }
 
+export interface ToolCallCheck extends CheckBase {
+  type: 'tool_call';
+  /** Name of the tool that must be called. */
+  name?: string;
+  /** Expected arguments. Every listed key must match; other arguments are allowed. */
+  args?: Record<string, unknown>;
+  /** When false, the tool (or any tool when `name` is omitted) must not be called. */
+  called?: boolean;
+  /** Exact number of matching calls. */
+  times?: number;
+  /** JSONPath to the tool calls when they are not found automatically. */
+  path?: string;
+}
+
 export type Check =
   | ContainsCheck
   | NotContainsCheck
@@ -138,7 +153,8 @@ export type Check =
   | SimilarityCheck
   | LexicalOverlapCheck
   | NoPiiCheck
-  | CustomCheck;
+  | CustomCheck
+  | ToolCallCheck;
 
 export type RequestPreset = 'openai-chat' | 'anthropic-messages' | 'generic-json' | 'none';
 
@@ -172,10 +188,27 @@ export interface TargetSpec {
   temperature?: number;
 }
 
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface TurnSpec {
+  input: string;
+  vars?: Record<string, unknown>;
+  /** Checks run on this turn's reply. */
+  checks?: Check[];
+  /** JSONPath expressions read from this turn's response into vars for later turns. */
+  extract?: Record<string, string>;
+}
+
 export interface CaseSpec {
   id: string;
   input?: string;
+  /** A conversation: each turn is sent in order with the earlier messages as history. */
+  turns?: TurnSpec[];
   vars?: Record<string, unknown>;
+  /** Checks run on the reply (the final reply for a conversation). */
   checks?: Check[];
   repeat?: number;
   description?: string;
@@ -262,6 +295,14 @@ export interface AttemptResult {
   checks: CheckResult[];
   /** Number of retry attempts consumed (1 = no retry). */
   attempts: number;
+  /** Every turn of a conversation case. */
+  turns?: TurnResult[];
+}
+
+export interface TurnResult extends Omit<AttemptResult, 'turns'> {
+  input: string;
+  /** Values read from the response with `extract`. */
+  extracted?: Record<string, unknown>;
 }
 
 export interface CheckAggregate {
@@ -332,6 +373,8 @@ export interface RunMetadata {
   endpointUnreachable?: boolean;
   /** Distinct endpoint errors observed during the run. */
   endpointErrors?: string[];
+  /** True when the responses came from a recording instead of the endpoint. */
+  replayed?: boolean;
 }
 
 export interface RunResult {

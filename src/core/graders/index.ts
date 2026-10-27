@@ -7,6 +7,7 @@ import { lexicalOverlapGrader } from './lexical.js';
 import { noPiiGrader } from './pii.js';
 import { similarityGrader } from './similarity.js';
 import { customGrader } from './custom.js';
+import { toolCallGrader } from './tool-call.js';
 
 export const graders: GraderRegistry = {
   contains: containsGrader,
@@ -21,6 +22,7 @@ export const graders: GraderRegistry = {
   lexical_overlap: lexicalOverlapGrader,
   no_pii: noPiiGrader,
   custom: customGrader,
+  tool_call: toolCallGrader,
 };
 
 export function getGrader(type: CheckType): Grader {
@@ -33,6 +35,7 @@ export function getGrader(type: CheckType): Grader {
 
 export { containsGrader, notContainsGrader, regexGrader, exactGrader, lengthGrader };
 export { jsonSchemaGrader, jsonPathGrader, latencyGrader, lexicalOverlapGrader, noPiiGrader, similarityGrader, customGrader };
+export { toolCallGrader };
 export { cosineSimilarity } from './embedding/local.js';
 export { detectPii } from './pii.js';
 export type { PiiFinding } from './pii.js';

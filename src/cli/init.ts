@@ -40,7 +40,9 @@ async function writeIfMissing(file: string, content: string, force?: boolean): P
   process.stdout.write(`created: ${file}\n`);
 }
 
-const EXAMPLE_SUITE = `name: example-support-bot
+const EXAMPLE_SUITE = `# yaml-language-server: $schema=https://unpkg.com/evalcheck/dist/suite.schema.json
+
+name: example-support-bot
 description: Example suite that runs against the bundled mock server (evalcheck serve-mock)
 
 target:
@@ -96,14 +98,14 @@ cases:
         reference: "Hello! I am the support bot. How can I help you?"
         minScore: 0.2
 
-  - id: bangla-shipping
-    input: "ডেলিভারি কত দিনে পাব?"
+  - id: shipping-time
+    input: "How long does delivery take?"
     vars:
       user: u3
     checks:
       - type: contains
         id: mentions-days
-        value: "কর্মদিবস"
+        value: "business days"
       - type: no_pii
         id: no-pii
         categories: [email, phone, card]

@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 
-import { loadSuite } from '../core/config/loader.js';
+import { allCaseChecks, loadSuite } from '../core/config/loader.js';
 import { EXIT_OK } from '../core/errors.js';
 
 export function registerValidateCommand(program: Command): Command {
@@ -12,10 +12,10 @@ export function registerValidateCommand(program: Command): Command {
     .action(async (suitePath: string, options: { json?: boolean }) => {
       const loaded = await loadSuite(suitePath);
       const { suite, hash } = loaded;
-      const checkCount = suite.cases.reduce((sum, c) => sum + (c.checks?.length ?? 0), 0);
+      const checkCount = suite.cases.reduce((sum, c) => sum + allCaseChecks(c).length, 0);
       const checkTypes = new Set<string>();
       for (const caseSpec of suite.cases) {
-        for (const check of caseSpec.checks ?? []) checkTypes.add(check.type);
+        for (const check of allCaseChecks(caseSpec)) checkTypes.add(check.type);
       }
 
       if (options.json) {

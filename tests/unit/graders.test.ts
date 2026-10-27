@@ -44,9 +44,9 @@ describe('contains / not_contains', () => {
     expect(insensitive.pass).toBe(true);
   });
 
-  it('handles unicode and Bangla text', async () => {
+  it('handles unicode text in other scripts', async () => {
     const result = await containsGrader(
-      makeContext({ check: { type: 'contains', value: 'ডেলিভারি' }, text: 'ডেলিভারি সাধারণত ২-৩ কর্মদিবসে হয়।' }),
+      makeContext({ check: { type: 'contains', value: 'डिलीवरी' }, text: 'डिलीवरी में आमतौर पर 2-3 कार्यदिवस लगते हैं।' }),
     );
     expect(result.pass).toBe(true);
   });
@@ -91,7 +91,7 @@ describe('regex', () => {
 
   it('supports unicode flags', async () => {
     const result = await regexGrader(
-      makeContext({ check: { type: 'regex', pattern: 'বাংলা', flags: 'u' }, text: 'আমি বাংলা বলি' }),
+      makeContext({ check: { type: 'regex', pattern: 'हिंदी', flags: 'u' }, text: 'मैं हिंदी बोलता हूँ' }),
     );
     expect(result.pass).toBe(true);
   });
@@ -141,9 +141,9 @@ describe('length', () => {
     expect(result.reason).toContain('above the maximum');
   });
 
-  it('counts words for Bangla text', async () => {
+  it('counts words in other scripts', async () => {
     const result = await lengthGrader(
-      makeContext({ check: { type: 'length', min: 3, unit: 'words' }, text: 'ডেলিভারি সাধারণত ২-৩ কর্মদিবসে হয়' }),
+      makeContext({ check: { type: 'length', min: 3, unit: 'words' }, text: 'डिलीवरी में आमतौर पर 2-3 कार्यदिवस लगते हैं' }),
     );
     expect(result.pass).toBe(true);
     expect(result.details).toMatchObject({ unit: 'words' });
@@ -345,15 +345,15 @@ describe('lexical_overlap', () => {
     expect(result.pass).toBe(true);
   });
 
-  it('handles Bangla text', async () => {
+  it('handles text in other scripts', async () => {
     const result = await lexicalOverlapGrader(
       makeContext({
         check: {
           type: 'lexical_overlap',
-          reference: 'ডেলিভারি সাধারণত ২-৩ কর্মদিবসে সম্পন্ন হয়',
+          reference: 'डिलीवरी में आमतौर पर 2-3 कार्यदिवस लगते हैं',
           minScore: 0.5,
         },
-        text: 'ডেলিভারি সাধারণত ২-৩ কর্মদিবসে সম্পন্ন হয়।',
+        text: 'डिलीवरी में आमतौर पर 2-3 कार्यदिवस लगते हैं।',
       }),
     );
     expect(result.pass).toBe(true);

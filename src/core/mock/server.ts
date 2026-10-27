@@ -2,6 +2,7 @@
  * Deterministic mock endpoint used by `evalcheck serve-mock`.
  *
  *   GET /health   POST /chat   POST /stream (SSE)   POST /echo
+ *   POST /v1/chat/completions (OpenAI shape)   POST /v1/messages (Anthropic shape)
  *
  * The inputs "trigger-500", "trigger-429" and "trigger-slow" (2s delay) exercise
  * the retry and timeout paths.
@@ -33,7 +34,7 @@ interface ChatAnswer {
 
 const ANSWERS: Array<{ match: RegExp; answer: ChatAnswer }> = [
   {
-    match: /refund|return|ফেরত|রিফান্ড/i,
+    match: /refund|return/i,
     answer: {
       intent: 'refund_policy',
       reply:
@@ -43,7 +44,7 @@ const ANSWERS: Array<{ match: RegExp; answer: ChatAnswer }> = [
     },
   },
   {
-    match: /hello|hi|hey|হাজি|সালাম|হ্যালো/i,
+    match: /hello|hi|hey/i,
     answer: {
       intent: 'greeting',
       reply: 'Hello! I am the support bot. Ask me about refunds, shipping or your account.',
@@ -52,13 +53,13 @@ const ANSWERS: Array<{ match: RegExp; answer: ChatAnswer }> = [
     },
   },
   {
-    match: /বাংলা|bangla|shipping|ডেলিভারি/i,
+    match: /shipping|delivery|deliver/i,
     answer: {
       intent: 'shipping',
       reply:
-        'ডেলিভারি সাধারণত ২-৩ কর্মদিবসে সম্পন্ন হয়। বাংলাদেশের ভেতরে ডেলিভারি ফ্রি, এবং অর্ডার ট্র্যাক করতে ট্র্যাকিং নম্বর ব্যবহার করুন।',
+        'Delivery usually takes 2-3 business days. Shipping is free on orders over $50, and you can follow your parcel with the tracking number in your confirmation email.',
       confidence: 0.9,
-      sources: ['kb://shipping-bn'],
+      sources: ['kb://shipping'],
     },
   },
   {
@@ -81,7 +82,29 @@ const DEFAULT_ANSWER: ChatAnswer = {
   sources: ['kb://general'],
 };
 
+export interface MockToolCall {
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export function toolCallsFor(input: string): MockToolCall[] {
+  const weather = /weather in ([\p{L} ]+?)\s*\??$/iu.exec(input.trim());
+  if (weather) return [{ name: 'get_weather', arguments: { city: weather[1]!.trim(), unit: 'celsius' } }];
+  const order = /(?:track|where is) (?:my )?order #?(\d{3,})/i.exec(input);
+  if (order) return [{ name: 'lookup_order', arguments: { orderId: order[1]! } }];
+  return [];
+}
+
 export function answerFor(input: string): ChatAnswer {
+  const order = /#(\d{3,})/.exec(input);
+  if (order) {
+    return {
+      intent: 'order_lookup',
+      reply: `I found order #${order[1]}. Its refund is pending and will be processed within 3 business days.`,
+      confidence: 0.91,
+      sources: ['kb://orders'],
+    };
+  }
   for (const entry of ANSWERS) {
     if (entry.match.test(input)) return entry.answer;
   }
@@ -158,18 +181,75 @@ async function handle(req: IncomingMessage, res: ServerResponse, latencyMs: numb
     return sendStream(res, input);
   }
 
+  if (url.pathname === '/v1/chat/completions') {
+    return sendJson(res, 200, openAiResponse(input));
+  }
+
+  if (url.pathname === '/v1/messages') {
+    return sendJson(res, 200, anthropicResponse(input));
+  }
+
   if (url.pathname === '/chat' || url.pathname === '/') {
     const answer = answerFor(input);
+    const toolCalls = toolCallsFor(input);
+    const order = /#(\d{3,})/.exec(input);
     return sendJson(res, 200, {
       reply: answer.reply,
       intent: answer.intent,
       confidence: answer.confidence,
       sources: answer.sources,
       tokens: answer.reply.split(/\s+/).length,
+      ...(order ? { order: { id: order[1], status: 'refund_pending' } } : {}),
+      ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
     });
   }
 
   return sendJson(res, 404, { error: `unknown route ${url.pathname}` });
+}
+
+function openAiResponse(input: string): Record<string, unknown> {
+  const toolCalls = toolCallsFor(input);
+  const content = toolCalls.length > 0 ? null : answerFor(input).reply;
+  return {
+    id: 'chatcmpl-mock',
+    object: 'chat.completion',
+    model: 'mock-model',
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content,
+          ...(toolCalls.length > 0
+            ? {
+                tool_calls: toolCalls.map((call, index) => ({
+                  id: `call_${index + 1}`,
+                  type: 'function',
+                  function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                })),
+              }
+            : {}),
+        },
+        finish_reason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
+      },
+    ],
+  };
+}
+
+function anthropicResponse(input: string): Record<string, unknown> {
+  const toolCalls = toolCallsFor(input);
+  const content =
+    toolCalls.length > 0
+      ? toolCalls.map((call, index) => ({ type: 'tool_use', id: `toolu_${index + 1}`, name: call.name, input: call.arguments }))
+      : [{ type: 'text', text: answerFor(input).reply }];
+  return {
+    id: 'msg_mock',
+    type: 'message',
+    role: 'assistant',
+    model: 'mock-model',
+    content,
+    stop_reason: toolCalls.length > 0 ? 'tool_use' : 'end_turn',
+  };
 }
 
 function sendJson(res: ServerResponse, status: number, payload: unknown): void {

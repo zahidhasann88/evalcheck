@@ -98,11 +98,96 @@ evalcheck run suite.yaml
 | `lexical_overlap` | the answer uses similar words to a reference    |
 | `similarity`      | the answer means the same as a reference \*     |
 | `custom`          | your own JS/TS function returns `{ pass: true }` |
+| `tool_call`       | the answer calls a tool with the right arguments |
 
 \* `similarity` needs an extra package: `npm install @huggingface/transformers`.
 It runs a small model on your machine (downloaded once).
 
 Run `evalcheck validate suite.yaml` to check your file for mistakes.
+
+### Autocomplete in your editor
+
+Add this line at the top of a suite file to get autocomplete, hover help and inline
+errors in VS Code (with the YAML extension) and other editors:
+
+```yaml
+# yaml-language-server: $schema=https://unpkg.com/evalcheck/dist/suite.schema.json
+```
+
+For JSON suites, add `"$schema": "https://unpkg.com/evalcheck/dist/suite.schema.json"`.
+`evalcheck schema --out suite.schema.json` writes the schema to a local file instead.
+
+## Test a conversation
+
+Chatbots often break on the second or third message. Use `turns` instead of `input`
+to send a conversation. Each message is sent with the earlier ones as history:
+
+```yaml
+cases:
+  - id: refund-follow-up
+    turns:
+      - input: "I want a refund"
+        checks:
+          - type: contains
+            value: "order number"
+      - input: "My order is #4821"
+        checks:
+          - type: contains
+            value: "#4821"
+    checks:                       # case checks run on the final reply
+      - type: contains
+        value: "3 business days"
+```
+
+- With `preset: openai-chat` or `anthropic-messages`, the history is sent as `messages`.
+  With `preset: generic-json`, it is sent as a `history` field.
+- In your own `body`, use `"{{history}}"` (the list of earlier messages),
+  `{{conversation.id}}` (one id per conversation, for APIs that keep sessions) and
+  `{{turn.index}}`.
+- `extract` reads a value from a response for later messages:
+
+  ```yaml
+  turns:
+    - input: "Where is my order #4821?"
+      extract:
+        orderId: "$.order.id"
+    - input: "Please cancel order #{{vars.orderId}}"
+  ```
+
+## Check tool calls
+
+If your AI calls tools (functions), check which tool it calls and with which arguments:
+
+```yaml
+checks:
+  - type: tool_call
+    name: get_weather
+    args:                 # only these keys are compared, other arguments are allowed
+      city: Dhaka
+  - type: tool_call
+    name: delete_account
+    called: false         # this tool must never be called
+```
+
+Tool calls are found automatically in OpenAI, Anthropic and Gemini responses and in a
+plain `tool_calls` list. For other shapes, point `path` at the list (for example
+`path: "$.result.actions"`). Use `times: 2` to require an exact number of calls.
+
+## Record once, replay for free
+
+Calling a real model costs money and takes time. Record the answers once, then
+re-run the checks against the recording as often as you like:
+
+```bash
+evalcheck run suite.yaml --record recordings/support-bot.json
+evalcheck run suite.yaml --replay recordings/support-bot.json
+```
+
+Replay never calls your API, so it is instant and needs no API key. It is the fastest
+way to write and tune checks, and lets CI check the suite on every pull request.
+Changes to `textPath` apply to the recorded answers. When a request no longer matches
+the recording (for example you changed an input), evalcheck warns you to record again.
+API keys and auth headers are removed from recordings.
 
 ## Catch regressions
 
@@ -128,7 +213,11 @@ evalcheck shows which cases broke, which got fixed, and how speed changed.
 | `evalcheck baseline save <run.json>` | save a run as the baseline           |
 | `evalcheck report <run.json> --format html --out report.html` | make an HTML report |
 | `evalcheck init [dir]`               | create an example suite              |
+| `evalcheck schema`                   | print the JSON Schema of suite files |
 | `evalcheck serve-mock`               | start a fake endpoint for testing    |
+
+Reports come in `console`, `json`, `junit`, `html` and `markdown` format
+(`--format markdown`).
 
 Add `--help` to any command to see all options. Results are saved in `runs/`.
 
@@ -139,12 +228,37 @@ More examples are in the [`examples/`](examples) folder.
 
 ## Use in GitHub Actions
 
+The evalcheck action runs a suite and posts the result as a comment on the pull
+request. The comment is updated on every push instead of adding a new one.
+
 ```yaml
-- name: Run evalcheck
-  env:
-    API_URL: ${{ secrets.API_URL }}
-    API_KEY: ${{ secrets.API_KEY }}
-  run: npx evalcheck run suites/support-bot.yaml --against baseline --fail-on-regression
+permissions:
+  pull-requests: write
+
+steps:
+  - uses: actions/checkout@v4
+  - uses: zahidhasann88/evalcheck@v1
+    env:
+      API_URL: ${{ secrets.API_URL }}
+      API_KEY: ${{ secrets.API_KEY }}
+    with:
+      suite: suites/support-bot.yaml
+      against: baseline           # optional: compare with a saved baseline
+```
+
+| Input                | Default  | What it does                                         |
+| -------------------- | -------- | ---------------------------------------------------- |
+| `suite`              |          | the suite file to run                                |
+| `against`            |          | baseline name or run file to compare with            |
+| `fail-on-regression` | `true`   | fail the step when a case regresses                  |
+| `args`               |          | extra `evalcheck run` options, e.g. `--repeat 3`     |
+| `comment`            | `true`   | post the report on the pull request                  |
+| `version`            | `latest` | evalcheck version to run                             |
+
+The report is also added to the job summary. Without the action:
+
+```yaml
+- run: npx evalcheck run suites/support-bot.yaml --against baseline --fail-on-regression --format markdown >> "$GITHUB_STEP_SUMMARY"
 ```
 
 ## Use as a library

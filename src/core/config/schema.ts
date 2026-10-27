@@ -23,7 +23,8 @@ export const ContainsCheckSchema = z
     value: z.string(),
     caseInsensitive: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .describe('Passes when the answer contains some text.');
 
 export const NotContainsCheckSchema = z
   .object({
@@ -32,7 +33,8 @@ export const NotContainsCheckSchema = z
     value: z.string(),
     caseInsensitive: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .describe('Passes when the answer does not contain some text.');
 
 export const RegexCheckSchema = z
   .object({
@@ -41,7 +43,8 @@ export const RegexCheckSchema = z
     pattern: z.string().min(1),
     flags: z.string().optional(),
   })
-  .strict();
+  .strict()
+  .describe('Passes when the answer matches a regular expression.');
 
 export const ExactCheckSchema = z
   .object({
@@ -50,7 +53,8 @@ export const ExactCheckSchema = z
     value: z.string(),
     normalize: z.array(NormalizerSchema).optional(),
   })
-  .strict();
+  .strict()
+  .describe('Passes when the answer is exactly some text.');
 
 export const JsonSchemaCheckSchema = z
   .object({
@@ -60,7 +64,8 @@ export const JsonSchemaCheckSchema = z
     schemaFile: z.string().min(1).optional(),
     $ref: z.string().min(1).optional(),
   })
-  .strict();
+  .strict()
+  .describe('Passes when the answer is valid JSON for a JSON Schema.');
 
 export const JsonPathCheckSchema = z
   .object({
@@ -74,7 +79,8 @@ export const JsonPathCheckSchema = z
     lte: z.number().optional(),
     contains: z.unknown().optional(),
   })
-  .strict();
+  .strict()
+  .describe('Passes when a value inside the JSON answer is correct.');
 
 export const LengthCheckSchema = z
   .object({
@@ -84,7 +90,8 @@ export const LengthCheckSchema = z
     max: z.number().int().min(0).optional(),
     unit: z.enum(['chars', 'words']).optional(),
   })
-  .strict();
+  .strict()
+  .describe('Passes when the answer is not too short or too long.');
 
 export const LatencyCheckSchema = z
   .object({
@@ -94,7 +101,8 @@ export const LatencyCheckSchema = z
     minMs: z.number().int().min(0).optional(),
     ttftMaxMs: z.number().int().min(0).optional(),
   })
-  .strict();
+  .strict()
+  .describe('Passes when the answer arrives fast enough.');
 
 export const SimilarityCheckSchema = z
   .object({
@@ -107,7 +115,8 @@ export const SimilarityCheckSchema = z
     revision: z.string().min(1).optional(),
     modelPath: z.string().min(1).optional(),
   })
-  .strict();
+  .strict()
+  .describe('Passes when the answer means the same as a reference (local embedding model).');
 
 export const LexicalOverlapCheckSchema = z
   .object({
@@ -118,7 +127,8 @@ export const LexicalOverlapCheckSchema = z
     minScore: z.number().min(0).max(1).optional(),
     metric: z.enum(['f1', 'rougeL', 'jaccard']).optional(),
   })
-  .strict();
+  .strict()
+  .describe('Passes when the answer uses similar words to a reference.');
 
 export const NoPiiCheckSchema = z
   .object({
@@ -127,7 +137,8 @@ export const NoPiiCheckSchema = z
     categories: z.array(z.enum(['email', 'phone', 'card', 'secret'])).optional(),
     allow: z.array(z.string()).optional(),
   })
-  .strict();
+  .strict()
+  .describe('Passes when no emails, phone numbers, cards or secrets leak.');
 
 export const CustomCheckSchema = z
   .object({
@@ -136,7 +147,21 @@ export const CustomCheckSchema = z
     module: z.string().min(1),
     export: z.string().min(1).optional(),
   })
-  .strict();
+  .strict()
+  .describe('Passes when your own JS/TS function returns { pass: true }.');
+
+export const ToolCallCheckSchema = z
+  .object({
+    type: z.literal('tool_call'),
+    ...checkBase,
+    name: z.string().min(1).optional(),
+    args: z.record(z.string(), z.unknown()).optional(),
+    called: z.boolean().optional(),
+    times: z.number().int().min(0).optional(),
+    path: z.string().min(1).optional(),
+  })
+  .strict()
+  .describe('Passes when the response calls a tool (function), optionally with the expected arguments.');
 
 export const CheckSchema = z.discriminatedUnion('type', [
   ContainsCheckSchema,
@@ -151,6 +176,7 @@ export const CheckSchema = z.discriminatedUnion('type', [
   LexicalOverlapCheckSchema,
   NoPiiCheckSchema,
   CustomCheckSchema,
+  ToolCallCheckSchema,
 ]);
 
 export const RequestPresetSchema = z.enum([
@@ -216,6 +242,19 @@ export const DefaultsSchema = z
   })
   .strict();
 
+export const TurnSpecSchema = z
+  .object({
+    input: z.string(),
+    vars: z.record(z.string(), z.unknown()).optional(),
+    checks: z.array(CheckSchema).optional(),
+    extract: z
+      .record(z.string(), z.string().min(1))
+      .optional()
+      .describe('JSONPath expressions read from this response into vars for the next turns.'),
+  })
+  .strict()
+  .describe('One message of a conversation. Its checks run on the reply to this message.');
+
 export const CaseSpecSchema = z
   .object({
     id: z
@@ -223,6 +262,11 @@ export const CaseSpecSchema = z
       .min(1, 'case id must not be empty')
       .regex(/^[A-Za-z0-9._-]+$/, 'case id may only contain letters, digits, dot, underscore and dash'),
     input: z.string().optional(),
+    turns: z
+      .array(TurnSpecSchema)
+      .min(1, 'turns must contain at least one turn')
+      .optional()
+      .describe('A conversation sent in order. Case checks run on the final reply.'),
     vars: z.record(z.string(), z.unknown()).optional(),
     checks: z.array(CheckSchema).optional(),
     repeat: z.number().int().min(1).max(100).optional(),
@@ -243,6 +287,7 @@ export const EmbeddingConfigSchema = z
 
 export const SuiteDefinitionSchema = z
   .object({
+    $schema: z.string().optional(),
     name: z.string().min(1, 'suite name must not be empty'),
     description: z.string().optional(),
     target: TargetSpecSchema,

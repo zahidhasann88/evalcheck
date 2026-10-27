@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://unpkg.com/evalcheck/dist/suite.schema.json
+
+name: support-conversation
+description: Multi-turn conversations against the bundled mock endpoint (evalcheck serve-mock)
+
+target:
+  url: http://127.0.0.1:8787/chat
+  method: POST
+  # generic-json sends {"input": ..., "history": [...]} for conversations.
+  preset: generic-json
+  response:
+    textPath: "$.reply"
+  timeoutMs: 10000
+
+defaults:
+  checks:
+    - type: no_pii
+      id: no-pii
+      categories: [email, phone, card]
+
+cases:
+  - id: refund-follow-up
+    description: The bot asks for the order number, then confirms the refund for that order.
+    turns:
+      - input: "I want a refund"
+        checks:
+          - type: contains
+            id: asks-for-order-number
+            value: "order number"
+      - input: "My order is #4821"
+        checks:
+          - type: contains
+            id: confirms-order
+            value: "#4821"
+    # Case checks run on the final reply.
+    checks:
+      - type: contains
+        id: mentions-timeline
+        value: "3 business days"
+
+  - id: order-lookup
+    description: A value from the first response is reused in the next message.
+    turns:
+      - input: "Where is my order #4821?"
+        extract:
+          orderId: "$.order.id"
+        checks:
+          - type: tool_call
+            id: looks-up-the-order
+            name: lookup_order
+            args:
+              orderId: "4821"
+      - input: "Please cancel order #{{vars.orderId}}"
+        checks:
+          - type: contains
+            id: same-order
+            value: "#4821"

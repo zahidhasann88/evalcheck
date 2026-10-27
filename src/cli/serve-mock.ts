@@ -22,6 +22,8 @@ export function registerServeMockCommand(program: Command): Command {
       process.stdout.write(`  chat    POST ${handle.url}/chat\n`);
       process.stdout.write(`  stream  POST ${handle.url}/stream\n`);
       process.stdout.write(`  echo    POST ${handle.url}/echo\n`);
+      process.stdout.write(`  openai  POST ${handle.url}/v1/chat/completions\n`);
+      process.stdout.write(`  claude  POST ${handle.url}/v1/messages\n`);
       process.stdout.write(`  health  GET  ${handle.url}/health\n`);
       process.stdout.write('\nPress Ctrl+C to stop.\n');
 

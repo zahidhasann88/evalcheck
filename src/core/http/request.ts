@@ -78,23 +78,23 @@ function buildPresetBody(
   scope: TemplateScope,
 ): Record<string, unknown> | undefined {
   const input = scope.input ?? caseSpec.input ?? '';
+  const messages = [...(scope.history ?? []), { role: 'user', content: input }];
   switch (preset) {
     case 'none':
       return undefined;
     case 'openai-chat': {
       const body: Record<string, unknown> = {
-        messages: [{ role: 'user', content: input }],
+        messages: target.system ? [{ role: 'system', content: target.system }, ...messages] : messages,
       };
       if (target.model) body.model = target.model;
       if (target.maxTokens !== undefined) body.max_tokens = target.maxTokens;
       if (target.temperature !== undefined) body.temperature = target.temperature;
-      if (target.system) body.messages = [{ role: 'system', content: target.system }, ...(body.messages as unknown[])];
       return body;
     }
     case 'anthropic-messages': {
       const body: Record<string, unknown> = {
         max_tokens: target.maxTokens ?? 1024,
-        messages: [{ role: 'user', content: input }],
+        messages,
       };
       if (target.model) body.model = target.model;
       if (target.temperature !== undefined) body.temperature = target.temperature;
@@ -103,10 +103,11 @@ function buildPresetBody(
     }
     case 'generic-json': {
       const body: Record<string, unknown> = { input };
-      for (const [key, value] of Object.entries(caseSpec.vars ?? {})) {
+      for (const [key, value] of Object.entries(scope.vars ?? caseSpec.vars ?? {})) {
         if (key === 'input') continue;
         body[key] = value;
       }
+      if (scope.history && !('history' in body)) body.history = scope.history;
       return body;
     }
     default:

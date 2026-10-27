@@ -150,14 +150,14 @@ describe('similarity grader', () => {
  * model (~120 MB) and caches it on disk.
  */
 describe.skipIf(process.env.EVALCHECK_SLOW !== '1')('similarity with the real model', () => {
-  it('scores identical Bangla sentences close to 1', async () => {
+  it('scores sentences with the same meaning close to 1', async () => {
     const provider = await createLocalEmbeddingProvider({
       model: 'Xenova/paraphrase-multilingual-MiniLM-L12-v2',
       logger: silentTestLogger,
     });
     const [a, b] = await provider.embed([
-      'ডেলিভারি সাধারণত ২-৩ কর্মদিবসে সম্পন্ন হয়।',
-      'ডেলিভারি সাধারণত দুই থেকে তিন কর্মদিবসে সম্পন্ন হয়।',
+      'डिलीवरी में आमतौर पर 2-3 कार्यदिवस लगते हैं।',
+      'डिलीवरी में आमतौर पर दो से तीन कार्यदिवस लगते हैं।',
     ]);
     expect(cosineSimilarity(a!, b!)).toBeGreaterThan(0.6);
   }, 300_000);

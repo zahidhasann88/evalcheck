@@ -51,7 +51,7 @@ describe('environment interpolation', () => {
 describe('template interpolation', () => {
   const scope = {
     input: 'What is your refund policy?',
-    vars: { user: 'u1', nested: { lang: 'bn' } },
+    vars: { user: 'u1', nested: { lang: 'de' } },
     case: { id: 'refund-policy', tags: ['billing'] },
   };
 
@@ -67,7 +67,7 @@ describe('template interpolation', () => {
 
   it('substitutes nested vars', () => {
     const interpolator = createInterpolator({ env: {} });
-    expect(interpolator.string('{{vars.nested.lang}}', scope)).toBe('bn');
+    expect(interpolator.string('{{vars.nested.lang}}', scope)).toBe('de');
   });
 
   it('substitutes {{case.id}}', () => {
@@ -77,7 +77,7 @@ describe('template interpolation', () => {
 
   it('renders objects as JSON', () => {
     const interpolator = createInterpolator({ env: {} });
-    expect(interpolator.string('{{vars.nested}}', scope)).toBe('{"lang":"bn"}');
+    expect(interpolator.string('{{vars.nested}}', scope)).toBe('{"lang":"de"}');
   });
 
   it('resolves unknown templates to an empty string', () => {

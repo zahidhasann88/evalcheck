@@ -10,6 +10,10 @@ export interface TemplateScope {
   input?: string;
   vars?: Record<string, unknown>;
   case?: { id: string; [key: string]: unknown };
+  /** Earlier messages of a conversation. */
+  history?: Array<{ role: string; content: string }>;
+  conversation?: { id: string };
+  turn?: { index: number };
 }
 
 export interface Interpolator {
@@ -23,6 +27,7 @@ export interface Interpolator {
 
 const ENV_PATTERN = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g;
 const TEMPLATE_PATTERN = /\{\{([^}]+)\}\}/g;
+const HISTORY_ONLY = /^\{\{\s*history\s*\}\}$/;
 
 export interface InterpolatorOptions {
   env?: Record<string, string | undefined>;
@@ -64,7 +69,10 @@ export function createInterpolator(options: InterpolatorOptions = {}): Interpola
   };
 
   const deep = <T,>(value: T, scope: TemplateScope = {}): T => {
-    if (typeof value === 'string') return interpolateString(value, scope) as unknown as T;
+    if (typeof value === 'string') {
+      if (HISTORY_ONLY.test(value)) return (scope.history ?? []) as unknown as T;
+      return interpolateString(value, scope) as unknown as T;
+    }
     if (Array.isArray(value)) return value.map((v) => deep(v, scope)) as unknown as T;
     if (value && typeof value === 'object') {
       const out: Record<string, unknown> = {};
@@ -97,6 +105,12 @@ function resolveTemplate(key: string, scope: TemplateScope): unknown {
       if (rest.length === 0) return scope.case;
       return getPath(scope.case, rest);
     }
+    case 'history':
+      return rest.length === 0 ? scope.history : undefined;
+    case 'conversation':
+      return getPath(scope.conversation, rest);
+    case 'turn':
+      return getPath(scope.turn, rest);
     default:
       return undefined;
   }

@@ -1,4 +1,4 @@
-// Intl.Segmenter gives proper word boundaries for scripts such as Bangla; the regex
+// Intl.Segmenter gives proper word boundaries for scripts without simple spaces or with combining marks; the regex
 // fallback covers Node builds without full ICU.
 
 import type { Normalizer } from '../types.js';

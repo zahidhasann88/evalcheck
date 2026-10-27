@@ -33,7 +33,10 @@ export function reportToConsole(result: RunResult, options: ConsoleReporterOptio
   const rule = '─'.repeat(60);
 
   lines.push('');
-  lines.push(c(ANSI.bold, `evalcheck · ${result.meta.suiteName}`));
+  lines.push(
+    c(ANSI.bold, `evalcheck · ${result.meta.suiteName}`) +
+      (result.meta.replayed ? c(ANSI.gray, '  (replayed from a recording)') : ''),
+  );
   lines.push(c(ANSI.gray, rule));
   lines.push(
     `${c(ANSI.bold, 'cases')} ${totals.cases}   ` +

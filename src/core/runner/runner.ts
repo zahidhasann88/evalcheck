@@ -1,10 +1,20 @@
 import type { Dispatcher } from 'undici';
 import { createRequire } from 'node:module';
 
+import {
+  exchangeKey,
+  recordExchange,
+  recordedRequest,
+  redactCassette,
+  replayExchange,
+  sameRequest,
+  type Cassette,
+} from '../cassette.js';
 import { getGrader } from '../graders/index.js';
-import { buildRequest } from '../http/request.js';
-import { executeRequest } from '../http/client.js';
-import { createInterpolator, type Interpolator } from '../utils/interpolate.js';
+import { buildRequest, type BuiltRequest } from '../http/request.js';
+import { executeRequest, type HttpOutcome } from '../http/client.js';
+import { jsonPathQuery } from '../utils/jsonpath.js';
+import { createInterpolator, type Interpolator, type TemplateScope } from '../utils/interpolate.js';
 import { createRedactor, redactHeaders, type Redactor } from '../utils/redact.js';
 import { createRunId } from '../utils/hash.js';
 import { mean, percentile, round } from '../utils/stats.js';
@@ -14,6 +24,8 @@ import type {
   CaseResult,
   CaseSpec,
   CaseStatus,
+  ChatMessage,
+  Check,
   CheckAggregate,
   CheckResult,
   EmbeddingProvider,
@@ -21,6 +33,7 @@ import type {
   Logger,
   RunResult,
   Suite,
+  TurnResult,
 } from '../types.js';
 import { pool, RateLimiter, defaultSleep, type Sleep } from './limiter.js';
 
@@ -49,6 +62,10 @@ export interface RunOptions {
   onCase?: (result: CaseResult) => void;
   /** Git information recorded in the run metadata. */
   git?: { commit?: string; branch?: string };
+  /** Every exchange with the endpoint is written into this recording (redacted). */
+  record?: Cassette;
+  /** Responses are taken from this recording instead of calling the endpoint. */
+  replay?: Cassette;
 }
 
 export async function runSuite(options: RunOptions): Promise<RunResult> {
@@ -59,6 +76,9 @@ export async function runSuite(options: RunOptions): Promise<RunResult> {
 
   const startedAtMs = now();
   const startedAt = new Date(startedAtMs).toISOString();
+  const runId = createRunId(new Date(startedAtMs));
+  const conversationPrefix = options.replay?.runId || runId;
+  if (options.record) options.record.runId = runId;
 
   const interpolator = createInterpolator({ env });
   const selected = selectCases(options.suite, options.filter);
@@ -83,6 +103,7 @@ export async function runSuite(options: RunOptions): Promise<RunResult> {
       limiter,
       logger,
       now,
+      conversationPrefix,
     });
     if (options.onCase) {
       // Callers may log or persist the partial result, so it is redacted too.
@@ -92,6 +113,7 @@ export async function runSuite(options: RunOptions): Promise<RunResult> {
   });
 
   const redactor = createRedactor({ values: [...interpolator.secrets] });
+  if (options.record) redactCassette(options.record, redactor);
   const redactedCases = caseResults.map((caseResult) => redactCase(caseResult, redactor));
 
   const finishedAtMs = now();
@@ -106,7 +128,7 @@ export async function runSuite(options: RunOptions): Promise<RunResult> {
       suiteName: options.suite.name,
       suiteHash: options.suiteHash,
       ...(options.suite.sourcePath ? { suitePath: options.suite.sourcePath } : {}),
-      runId: createRunId(new Date(startedAtMs)),
+      runId,
       startedAt,
       finishedAt: new Date(finishedAtMs).toISOString(),
       durationMs: finishedAtMs - startedAtMs,
@@ -116,6 +138,7 @@ export async function runSuite(options: RunOptions): Promise<RunResult> {
       platform: `${process.platform}-${process.arch}`,
       endpointUnreachable: endpointErrors.length > 0,
       ...(endpointErrors.length > 0 ? { endpointErrors } : {}),
+      ...(options.replay ? { replayed: true } : {}),
     },
     totals,
     cases: redactedCases,
@@ -143,10 +166,11 @@ interface RunCaseArgs {
   limiter: RateLimiter;
   logger: Logger;
   now: () => number;
+  conversationPrefix: string;
 }
 
 async function runCase(args: RunCaseArgs): Promise<CaseResult> {
-  const { caseSpec, suite, interpolator, options, limiter, logger, now } = args;
+  const { caseSpec, suite, options, now } = args;
   const repeat = resolveRepeat(caseSpec, options.repeat, suite);
 
   if (caseSpec.skip) {
@@ -168,15 +192,7 @@ async function runCase(args: RunCaseArgs): Promise<CaseResult> {
   const attempts: AttemptResult[] = [];
 
   for (let index = 0; index < repeat; index++) {
-    const attempt = await runAttempt({
-      caseSpec,
-      suite,
-      interpolator,
-      options,
-      limiter,
-      logger,
-      index,
-    });
+    const attempt = await runAttempt({ ...args, index });
     attempts.push(attempt);
   }
 
@@ -224,42 +240,117 @@ async function runCase(args: RunCaseArgs): Promise<CaseResult> {
   };
 }
 
-interface RunAttemptArgs {
-  caseSpec: CaseSpec;
-  suite: Suite;
-  interpolator: Interpolator;
-  options: RunOptions;
-  limiter: RateLimiter;
-  logger: Logger;
+interface RunAttemptArgs extends RunCaseArgs {
   index: number;
 }
 
 async function runAttempt(args: RunAttemptArgs): Promise<AttemptResult> {
-  const { caseSpec, suite, interpolator, options, limiter, logger, index } = args;
-  const scope = {
-    input: caseSpec.input ?? '',
-    vars: caseSpec.vars ?? {},
+  const { caseSpec, index, conversationPrefix, logger } = args;
+  const conversation = { id: `${conversationPrefix}-${caseSpec.id}-${index + 1}` };
+
+  if (!caseSpec.turns) {
+    const turn = await runTurn(args, {
+      turnIndex: 0,
+      input: caseSpec.input ?? '',
+      vars: caseSpec.vars ?? {},
+      conversation,
+      checks: caseSpec.checks ?? [],
+      idPrefix: '',
+    });
+    const { input: _input, extracted: _extracted, ...rest } = turn;
+    return { ...rest, index };
+  }
+
+  const turns: TurnResult[] = [];
+  const history: ChatMessage[] = [];
+  let vars: Record<string, unknown> = { ...(caseSpec.vars ?? {}) };
+  const lastIndex = caseSpec.turns.length - 1;
+
+  for (const [turnIndex, turnSpec] of caseSpec.turns.entries()) {
+    vars = { ...vars, ...(turnSpec.vars ?? {}) };
+    const input = args.interpolator.string(turnSpec.input, {
+      vars,
+      case: { ...caseSpec, id: caseSpec.id },
+      conversation,
+      turn: { index: turnIndex + 1 },
+    });
+    const turn = await runTurn(args, {
+      turnIndex,
+      input,
+      vars,
+      history: [...history],
+      conversation,
+      checks: [...(turnSpec.checks ?? []), ...(turnIndex === lastIndex ? (caseSpec.checks ?? []) : [])],
+      idPrefix: `turn-${turnIndex + 1}.`,
+      prefixedCount: turnSpec.checks?.length ?? 0,
+    });
+    if (turnSpec.extract) {
+      const extracted = extractVars(turn, turnSpec.extract);
+      for (const name of Object.keys(turnSpec.extract)) {
+        if (!(name in extracted)) {
+          logger.warn(`case ${caseSpec.id} turn ${turnIndex + 1}: extract "${name}" did not match the response`);
+        }
+      }
+      turn.extracted = extracted;
+      vars = { ...vars, ...extracted };
+    }
+    turns.push(turn);
+    history.push({ role: 'user', content: input }, { role: 'assistant', content: turn.text });
+    if (!turn.transportOk) break;
+  }
+
+  const final = turns[turns.length - 1]!;
+  const firstError = turns.find((t) => t.error)?.error;
+  return {
+    index,
+    transportOk: turns.length === caseSpec.turns.length && turns.every((t) => t.transportOk),
+    ...(final.status !== undefined ? { status: final.status } : {}),
+    ...(final.statusText !== undefined ? { statusText: final.statusText } : {}),
+    ...(firstError ? { error: firstError } : {}),
+    text: final.text,
+    ...(final.json !== undefined ? { json: final.json } : {}),
+    ...(final.bodyJson !== undefined ? { bodyJson: final.bodyJson } : {}),
+    latencyMs: turns.reduce((sum, t) => sum + t.latencyMs, 0),
+    ...(final.ttftMs !== undefined ? { ttftMs: final.ttftMs } : {}),
+    timestamp: turns[0]!.timestamp,
+    request: final.request,
+    ...(final.responseHeaders ? { responseHeaders: final.responseHeaders } : {}),
+    checks: turns.flatMap((t) => t.checks),
+    attempts: turns.reduce((sum, t) => sum + t.attempts, 0),
+    turns,
+  };
+}
+
+interface TurnArgs {
+  turnIndex: number;
+  input: string;
+  vars: Record<string, unknown>;
+  history?: ChatMessage[];
+  conversation: { id: string };
+  checks: Check[];
+  /** Prefix added to the ids of the first `prefixedCount` checks (all of them when omitted). */
+  idPrefix: string;
+  prefixedCount?: number;
+}
+
+async function runTurn(args: RunAttemptArgs, turnArgs: TurnArgs): Promise<TurnResult> {
+  const { caseSpec, suite, interpolator, logger, index } = args;
+  const { turnIndex, input, vars, history, conversation } = turnArgs;
+  const scope: TemplateScope = {
+    input,
+    vars,
     case: { ...caseSpec, id: caseSpec.id },
+    conversation,
+    turn: { index: turnIndex + 1 },
+    ...(history ? { history } : {}),
   };
 
   const request = buildRequest({ suite, caseSpec, interpolator, scope });
+  const outcome = await send(args, request, exchangeKey(caseSpec.id, index, turnIndex));
 
-  await limiter.acquire();
-
-  const outcome = await executeRequest({
-    request,
-    timeoutMs: suite.target.timeoutMs,
-    retries: suite.target.retries,
-    stream: suite.target.response.stream,
-    response: suite.target.response,
-    logger,
-    ...(options.dispatcher ? { dispatcher: options.dispatcher } : {}),
-    ...(options.sleep ? { sleep: options.sleep } : {}),
-    ...(options.now ? { now: options.now } : {}),
-  });
-
-  const attempt: AttemptResult = {
-    index,
+  const turn: TurnResult = {
+    index: turnIndex,
+    input,
     transportOk: outcome.ok,
     ...(outcome.status !== undefined ? { status: outcome.status } : {}),
     ...(outcome.statusText !== undefined ? { statusText: outcome.statusText } : {}),
@@ -281,33 +372,95 @@ async function runAttempt(args: RunAttemptArgs): Promise<AttemptResult> {
     attempts: outcome.attempts ?? 1,
   };
 
+  const label = caseSpec.turns ? `case ${caseSpec.id} turn ${turnIndex + 1}` : `case ${caseSpec.id}`;
   for (const warning of outcome.warnings) {
-    logger.warn(`case ${caseSpec.id}: ${warning}`);
+    logger.warn(`${label}: ${warning}`);
   }
 
-  attempt.checks = await runChecks({
-    attempt,
+  turn.checks = await runChecks({
+    attempt: turn,
+    checks: turnArgs.checks,
+    idPrefix: turnArgs.idPrefix,
+    prefixedCount: turnArgs.prefixedCount ?? turnArgs.checks.length,
     caseSpec,
     suite,
-    options,
+    options: args.options,
     logger,
   });
 
-  return attempt;
+  return turn;
+}
+
+async function send(args: RunAttemptArgs, request: BuiltRequest, key: string): Promise<HttpOutcome> {
+  const { suite, options, limiter, logger, interpolator } = args;
+
+  if (options.replay) {
+    const exchange = options.replay.exchanges[key];
+    if (!exchange) {
+      return {
+        ok: false,
+        bodyText: '',
+        text: '',
+        latencyMs: 0,
+        error: `no recorded response for ${key}; record the suite again with --record`,
+        errorKind: 'replay',
+        warnings: [],
+      };
+    }
+    const outcome = replayExchange(exchange, suite.target.response, suite.target.response.stream);
+    const current = createRedactor({ values: [...interpolator.secrets] }).redactDeep(recordedRequest(request));
+    if (!sameRequest(current, exchange.request)) {
+      outcome.warnings.push('the request differs from the recorded one (the suite or its inputs changed)');
+    }
+    return outcome;
+  }
+
+  await limiter.acquire();
+  const outcome = await executeRequest({
+    request,
+    timeoutMs: suite.target.timeoutMs,
+    retries: suite.target.retries,
+    stream: suite.target.response.stream,
+    response: suite.target.response,
+    logger,
+    ...(options.dispatcher ? { dispatcher: options.dispatcher } : {}),
+    ...(options.sleep ? { sleep: options.sleep } : {}),
+    ...(options.now ? { now: options.now } : {}),
+  });
+  if (options.record) options.record.exchanges[key] = recordExchange(request, outcome);
+  return outcome;
+}
+
+function extractVars(turn: TurnResult, extract: Record<string, string>): Record<string, unknown> {
+  const document = turn.bodyJson ?? turn.json;
+  const out: Record<string, unknown> = {};
+  if (document === undefined) return out;
+  for (const [name, path] of Object.entries(extract)) {
+    try {
+      const matches = jsonPathQuery(document, path);
+      if (matches.length > 0) out[name] = matches[0];
+    } catch {
+      continue;
+    }
+  }
+  return out;
 }
 
 async function runChecks(args: {
   attempt: AttemptResult;
+  checks: Check[];
+  idPrefix: string;
+  prefixedCount: number;
   caseSpec: CaseSpec;
   suite: Suite;
   options: RunOptions;
   logger: Logger;
 }): Promise<CheckResult[]> {
-  const { attempt, caseSpec, suite, options, logger } = args;
-  const checks = caseSpec.checks ?? [];
+  const { attempt, checks, caseSpec, suite, options, logger } = args;
   const results: CheckResult[] = [];
 
-  for (const check of checks) {
+  for (const [position, check] of checks.entries()) {
+    const prefix = position < args.prefixedCount ? args.idPrefix : '';
     const grader = getGrader(check.type);
     const ctx: GradeContext = {
       text: attempt.text,
@@ -324,7 +477,7 @@ async function runChecks(args: {
     try {
       const result = await grader(ctx);
       const merged: CheckResult = { ...result };
-      merged.id = result.id || check.id || check.type;
+      merged.id = `${prefix}${result.id || check.id || check.type}`;
       merged.durationMs = Date.now() - started;
       if (check.optional !== undefined) merged.optional = check.optional;
       results.push(merged);
@@ -332,7 +485,7 @@ async function runChecks(args: {
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`case ${caseSpec.id}: check "${check.type}" failed to run: ${message}`);
       results.push({
-        id: check.id ?? check.type,
+        id: `${prefix}${check.id ?? check.type}`,
         type: check.type,
         pass: false,
         reason: `grader error: ${message}`,

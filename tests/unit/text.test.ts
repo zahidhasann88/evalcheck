@@ -18,10 +18,10 @@ describe('tokenization', () => {
     expect(tokenize('Hello, brave new world!')).toEqual(['hello', 'brave', 'new', 'world']);
   });
 
-  it('splits Bangla text into words', () => {
-    const tokens = tokenize('ডেলিভারি সাধারণত ২-৩ কর্মদিবসে হয়');
+  it('splits text in other scripts into words', () => {
+    const tokens = tokenize('डिलीवरी में आमतौर पर 2-3 कार्यदिवस लगते हैं');
     expect(tokens.length).toBeGreaterThan(3);
-    expect(tokens).toContain('ডেলিভারি');
+    expect(tokens).toContain('डिलीवरी');
   });
 
   it('handles an empty string', () => {

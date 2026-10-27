@@ -12,6 +12,7 @@ import { registerInitCommand } from './init.js';
 import { registerValidateCommand } from './validate.js';
 import { registerReportCommand } from './report.js';
 import { registerServeMockCommand } from './serve-mock.js';
+import { registerSchemaCommand } from './schema.js';
 import { reportError } from './shared.js';
 import { EXIT_CONFIG_ERROR } from '../core/errors.js';
 
@@ -36,6 +37,7 @@ export function buildProgram(): Command {
   registerValidateCommand(program);
   registerReportCommand(program);
   registerServeMockCommand(program);
+  registerSchemaCommand(program);
 
   return program;
 }

@@ -1,4 +1,4 @@
-import type { CaseResult, RunResult } from '../types.js';
+import type { CaseResult, RunResult, TurnResult } from '../types.js';
 
 export interface HtmlReportOptions {
   /** Baseline run; enables a response diff against the previous run. */
@@ -233,12 +233,24 @@ function renderAttempts(caseResult: CaseResult): string {
   <summary>Attempt ${attempt.index + 1} · status ${attempt.status ?? 'n/a'} · ${Math.round(attempt.latencyMs)}ms${
     attempt.ttftMs !== undefined ? ` · ttft ${Math.round(attempt.ttftMs)}ms` : ''
   }${attempt.error ? ` · <span class="bad">${escapeHtml(attempt.error)}</span>` : ''}</summary>
-  <pre class="request">${escapeHtml(formatRequest(attempt))}</pre>
-  <pre class="response">${escapeHtml(attempt.text || '(empty response)')}</pre>
+${attempt.turns ? renderTurns(attempt.turns) : `  <pre class="request">${escapeHtml(formatRequest(attempt))}</pre>
+  <pre class="response">${escapeHtml(attempt.text || '(empty response)')}</pre>`}
 </details>`,
     )
     .join('\n');
   return `<div class="attempts">${blocks}</div>`;
+}
+
+function renderTurns(turns: TurnResult[]): string {
+  return turns
+    .map(
+      (turn) => `  <p class="muted">Turn ${turn.index + 1} · status ${turn.status ?? 'n/a'} · ${Math.round(turn.latencyMs)}ms${
+        turn.error ? ` · <span class="bad">${escapeHtml(turn.error)}</span>` : ''
+      }</p>
+  <pre class="request">${escapeHtml(turn.input)}</pre>
+  <pre class="response">${escapeHtml(turn.text || '(empty response)')}</pre>`,
+    )
+    .join('\n');
 }
 
 function formatRequest(attempt: CaseResult['attempts'][number]): string {

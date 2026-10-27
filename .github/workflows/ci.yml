@@ -68,10 +68,15 @@ jobs:
 
       - name: Run the example suites
         run: |
-          node dist/cli/index.js run examples/suites/support-bot.yaml --out runs
-          node dist/cli/index.js run examples/suites/json-output.yaml --out runs
-          node dist/cli/index.js run examples/suites/bangla-qa.yaml --out runs
-          node dist/cli/index.js run examples/suites/streaming.yaml --out runs
+          for suite in examples/suites/*.yaml; do
+            node dist/cli/index.js run "$suite" --out runs --format markdown >> "$GITHUB_STEP_SUMMARY"
+          done
+          node dist/cli/index.js run examples/suites/conversation.yaml --out runs --record runs/conversation.recording.json
+
+      - name: Replay a recording with the endpoint stopped
+        run: |
+          pkill -f serve-mock
+          node dist/cli/index.js run examples/suites/conversation.yaml --out runs --replay runs/conversation.recording.json
 
       - name: Upload the run artifacts
         if: always()

@@ -18,9 +18,11 @@ export {
   parseSuiteSource,
   normalizeSuite,
   safeParseSuite,
+  allCaseChecks,
   DEFAULT_EMBEDDING_MODEL,
 } from './config/loader.js';
 export { SuiteDefinitionSchema, CheckSchema } from './config/schema.js';
+export { suiteJsonSchema, SUITE_SCHEMA_URL } from './config/json-schema.js';
 export { loadDataset, parseCsv } from './config/dataset.js';
 export type { Dataset, DatasetOptions } from './config/dataset.js';
 
@@ -52,9 +54,21 @@ export type { ExtractionResult, ResponseSpec, SseAssembly } from './http/extract
 export { graders, getGrader } from './graders/index.js';
 export { createLocalEmbeddingProvider, cosineSimilarity, defaultCacheDir } from './graders/embedding/local.js';
 export { detectPii } from './graders/pii.js';
+export { findToolCalls, argsMatch } from './graders/tool-call.js';
+export type { ToolCall } from './graders/tool-call.js';
 export { clearSchemaCache } from './graders/json-schema.js';
 export { clearCustomCheckCache, loadCustomCheck } from './graders/custom.js';
 export type { CustomCheckFn, CustomResponse, CustomContext, CustomVerdict } from './graders/custom.js';
+
+export {
+  createCassette,
+  loadCassette,
+  parseCassette,
+  serializeCassette,
+  exchangeKey,
+  CASSETTE_VERSION,
+} from './cassette.js';
+export type { Cassette, RecordedExchange, RecordedRequest } from './cassette.js';
 
 export { runSuite, runSuiteFile, selectCases, globToRegExp, computeTotals, RUN_SCHEMA_VERSION } from './runner/runner.js';
 export type { RunOptions } from './runner/runner.js';
@@ -70,6 +84,8 @@ export { reportToConsole } from './report/console.js';
 export { reportToJson, parseRunFile, JSON_REPORT_SCHEMA_VERSION } from './report/json.js';
 export { reportToJunit } from './report/junit.js';
 export { reportToHtml, diffLines } from './report/html.js';
+export { reportToMarkdown, markdownMarker } from './report/markdown.js';
+export type { MarkdownReporterOptions } from './report/markdown.js';
 
 export {
   saveBaseline,

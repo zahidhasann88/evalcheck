@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import { allCaseChecks } from '../core/config/loader.js';
 import { ConfigError, EvalcheckError, EXIT_CONFIG_ERROR } from '../core/errors.js';
 import { createLogger } from '../core/logger.js';
 import type { Logger, Suite } from '../core/types.js';
@@ -50,7 +51,7 @@ export async function ensureDir(dir: string): Promise<string> {
 
 export function suiteNeedsEmbeddings(suite: Suite): boolean {
   return suite.cases.some((caseSpec) =>
-    (caseSpec.checks ?? []).some((check) => check.type === 'similarity'),
+    allCaseChecks(caseSpec).some((check) => check.type === 'similarity'),
   );
 }
 

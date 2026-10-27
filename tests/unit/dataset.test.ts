@@ -48,7 +48,7 @@ describe('datasets', () => {
   });
 
   it('loads a CSV file and maps the columns', async () => {
-    const file = await tempFile('cases.csv', 'key,question,lang\na,What is it?,en\nb,এটি কী?,bn\n');
+    const file = await tempFile('cases.csv', 'key,question,lang\na,What is it?,en\nb,Was ist das?,de\n');
     const dataset = await loadDataset(file, { idColumn: 'key', inputColumn: 'question' });
     expect(dataset.cases).toHaveLength(2);
     expect(dataset.cases[0]!.id).toBe('a');

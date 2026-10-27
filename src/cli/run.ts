@@ -7,14 +7,17 @@ import { loadDataset } from '../core/config/dataset.js';
 import { createLocalEmbeddingProvider } from '../core/graders/embedding/local.js';
 import { compareRuns, parseThresholds } from '../core/compare/compare.js';
 import { loadBaseline, resolveBaselinePath } from '../core/baseline.js';
+import { createCassette, loadCassette, serializeCassette, type Cassette } from '../core/cassette.js';
 import { runSuite } from '../core/runner/runner.js';
 import { reportToConsole } from '../core/report/console.js';
 import { reportToJson } from '../core/report/json.js';
 import { reportToJunit } from '../core/report/junit.js';
 import { reportToHtml } from '../core/report/html.js';
+import { reportToMarkdown } from '../core/report/markdown.js';
 import { EXIT_CHECK_FAILED, EXIT_ENDPOINT_UNREACHABLE, EXIT_OK } from '../core/errors.js';
 import type { Check, RunResult, Suite } from '../core/types.js';
 import {
+  configError,
   ensureDir,
   makeLogger,
   readGitInfo,
@@ -49,6 +52,8 @@ export interface RunCommandOptions {
   embeddingRevision?: string;
   embeddingCache?: string;
   offline?: boolean;
+  record?: string;
+  replay?: string;
   color?: boolean;
   quiet?: boolean;
   verbose?: boolean;
@@ -60,13 +65,13 @@ export function registerRunCommand(program: Command): Command {
     .description('Run a test suite against an HTTP endpoint and grade the responses')
     .argument('<suite>', 'path to the suite file (YAML or JSON)')
     .option('--out <dir>', 'directory for the run artifacts', 'runs')
-    .option('--out-file <file>', 'explicit path for the formatted report (json, junit, html, console)')
+    .option('--out-file <file>', 'explicit path for the formatted report (json, junit, html, markdown, console)')
     .option('--tag <name>', 'free-form tag stored in the run metadata')
     .option('--filter <glob>', 'only run cases whose id matches the glob')
     .option('--concurrency <n>', 'number of cases executed in parallel', '4')
     .option('--repeat <n>', 'number of times every case is executed')
     .option('--rps <n>', 'global request rate limit (requests per second)')
-    .option('--format <format>', 'console | json | junit | html', 'console')
+    .option('--format <format>', 'console | json | junit | html | markdown', 'console')
     .option('--against <baseline>', 'compare the run against a baseline: a run file or a saved baseline name (e.g. "baseline")')
     .option('--fail-on-regression', 'exit with code 1 when a case regresses')
     .option('--threshold <spec>', 'comparison threshold, e.g. pass_rate=-0.02', collect, [])
@@ -80,6 +85,8 @@ export function registerRunCommand(program: Command): Command {
     .option('--embedding-revision <rev>', 'pinned model revision (commit) for the similarity check')
     .option('--embedding-cache <dir>', 'directory for the local model cache')
     .option('--offline', 'never download models; fail if the embedding model is missing')
+    .option('--record <file>', 'save every response to a recording file')
+    .option('--replay <file>', 'grade responses from a recording file instead of calling the endpoint')
     .option('--no-color', 'disable ANSI colors')
     .option('--quiet', 'only print errors')
     .option('--verbose', 'print debug information')
@@ -95,6 +102,9 @@ function collect(value: string, previous: string[]): string[] {
 
 export async function runCommand(suitePath: string, options: RunCommandOptions): Promise<number> {
   const logger = makeLogger(options);
+  if (options.record && options.replay) {
+    throw configError('--record and --replay cannot be used together');
+  }
   const loaded = await loadSuite(suitePath);
   let suite: Suite = loaded.suite;
 
@@ -115,6 +125,14 @@ export async function runCommand(suitePath: string, options: RunCommandOptions):
   const concurrency = parsePositiveInt(options.concurrency, 4, '--concurrency');
   const repeat = options.repeat !== undefined ? parsePositiveInt(options.repeat, 1, '--repeat') : undefined;
   const rps = options.rps !== undefined ? parseNonNegativeNumber(options.rps, '--rps') : 0;
+  const record = options.record ? createCassette(suite.name) : undefined;
+  let replay: Cassette | undefined;
+  if (options.replay) {
+    replay = await loadCassette(options.replay);
+    if (replay.suiteName && replay.suiteName !== suite.name) {
+      logger.warn(`the recording was made for suite "${replay.suiteName}", not "${suite.name}"`);
+    }
+  }
 
   const run = await runSuite({
     suite,
@@ -126,8 +144,16 @@ export async function runCommand(suitePath: string, options: RunCommandOptions):
     ...(options.tag ? { tag: options.tag } : {}),
     ...(embeddings ? { embeddings } : {}),
     ...(git ? { git } : {}),
+    ...(record ? { record } : {}),
+    ...(replay ? { replay } : {}),
     logger,
   });
+
+  if (record && options.record) {
+    const written = await writeArtifact(options.record, serializeCassette(record));
+    process.stderr.write(`recording saved: ${written}
+`);
+  }
 
   const outDir = await ensureDir(options.out ?? 'runs');
   const artifactPath = path.join(outDir, runFileName(suite.name));
@@ -181,7 +207,7 @@ export async function runCommand(suitePath: string, options: RunCommandOptions):
  * Writes the requested report.
  *
  * - The JSON run artifact always goes to `<out>/<timestamp>_<suite>.json`.
- * - `console` and `json` go to stdout, unless `--out-file` is given.
+ * - `console`, `json` and `markdown` go to stdout, unless `--out-file` is given.
  * - `junit` and `html` go to a file, unless `--out-file` is given.
  */
 async function emit(run: RunResult, options: RunCommandOptions, artifactPath: string): Promise<void> {
@@ -193,6 +219,16 @@ async function emit(run: RunResult, options: RunCommandOptions, artifactPath: st
       const content = `${reportToJson(run)}\n`;
       if (outFile) {
         process.stdout.write(`${await writeArtifact(outFile, content)}\n`);
+      } else {
+        process.stdout.write(content);
+      }
+      break;
+    }
+    case 'markdown': {
+      const content = reportToMarkdown(run);
+      if (outFile) {
+        process.stdout.write(`${await writeArtifact(outFile, content)}
+`);
       } else {
         process.stdout.write(content);
       }

@@ -5,7 +5,13 @@ import { request as undiciRequest, type Dispatcher } from 'undici';
 
 import type { Logger } from '../types.js';
 import type { RetryConfig, StreamMode } from '../types.js';
-import { extractResponse, assembleSse, type ResponseSpec } from './extract.js';
+import {
+  extractResponse,
+  assembleSse,
+  type ExtractionResult,
+  type ResponseSpec,
+  type SseAssembly,
+} from './extract.js';
 import { isDoneEvent, parseSseChunk, type SseEvent } from './sse.js';
 import type { BuiltRequest } from './request.js';
 
@@ -34,7 +40,7 @@ export interface HttpOutcome {
   latencyMs: number;
   ttftMs?: number;
   error?: string;
-  errorKind?: 'timeout' | 'network' | 'http' | 'extract';
+  errorKind?: 'timeout' | 'network' | 'http' | 'extract' | 'replay';
   attempts?: number;
   warnings: string[];
 }
@@ -122,32 +128,15 @@ async function attemptRequest(options: HttpCallOptions, now: () => number): Prom
     }
 
     const bodyText = await res.body.text();
-    const latencyMs = now() - start;
-    const extraction = extractResponse(bodyText, response);
-    const expected = response.status;
-    const statusOk = expected !== undefined ? res.statusCode === expected : isSuccess(res.statusCode);
-
-    return {
-      ok: statusOk,
+    return buildOutcome({
       status: res.statusCode,
       statusText: res.statusText,
       headers,
       bodyText,
-      text: extraction.text,
-      ...(extraction.json !== undefined ? { json: extraction.json } : {}),
-      ...(extraction.bodyJson !== undefined ? { bodyJson: extraction.bodyJson } : {}),
-      latencyMs,
-      ...(statusOk
-        ? {}
-        : {
-            error:
-              expected !== undefined
-                ? `expected HTTP ${expected} but received ${res.statusCode}`
-                : `received HTTP ${res.statusCode}`,
-            errorKind: 'http' as const,
-          }),
-      warnings: extraction.warnings,
-    };
+      extraction: extractResponse(bodyText, response),
+      latencyMs: now() - start,
+      expectedStatus: response.status,
+    });
   } catch (err) {
     const latencyMs = now() - start;
     if (timedOut) {
@@ -219,44 +208,71 @@ async function readSse(
     }
   }
 
-  const assembly = assembleSse(events, response);
-  const latencyMs = now() - start;
-  const expected = response.status;
-  const statusOk = expected !== undefined ? res.statusCode === expected : isSuccess(res.statusCode);
-
-  let json: unknown;
-  if (assembly.text) {
-    const trimmed = assembly.text.trim();
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      try {
-        json = JSON.parse(trimmed);
-      } catch {
-        json = undefined;
-      }
-    }
-  }
-
-  return {
-    ok: statusOk,
+  return buildOutcome({
     status: res.statusCode,
     statusText: res.statusText,
     headers,
     bodyText,
+    extraction: sseExtraction(assembleSse(events, response)),
+    latencyMs: now() - start,
+    ...(firstTokenAt !== undefined ? { ttftMs: firstTokenAt - start } : {}),
+    expectedStatus: response.status,
+  });
+}
+
+export function sseExtraction(assembly: SseAssembly): ExtractionResult {
+  let json: unknown;
+  const trimmed = assembly.text.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      json = JSON.parse(trimmed);
+    } catch {
+      json = undefined;
+    }
+  }
+  return {
     text: assembly.text,
     ...(json !== undefined ? { json } : {}),
     ...(assembly.bodyJson !== undefined ? { bodyJson: assembly.bodyJson } : {}),
-    latencyMs,
-    ...(firstTokenAt !== undefined ? { ttftMs: firstTokenAt - start } : {}),
+    warnings: assembly.warnings,
+  };
+}
+
+export interface OutcomeParts {
+  status: number;
+  statusText?: string;
+  headers?: Record<string, string>;
+  bodyText: string;
+  extraction: ExtractionResult;
+  latencyMs: number;
+  ttftMs?: number;
+  expectedStatus?: number;
+}
+
+export function buildOutcome(parts: OutcomeParts): HttpOutcome {
+  const { status, extraction, expectedStatus } = parts;
+  const statusOk = expectedStatus !== undefined ? status === expectedStatus : isSuccess(status);
+  return {
+    ok: statusOk,
+    status,
+    ...(parts.statusText !== undefined ? { statusText: parts.statusText } : {}),
+    ...(parts.headers ? { headers: parts.headers } : {}),
+    bodyText: parts.bodyText,
+    text: extraction.text,
+    ...(extraction.json !== undefined ? { json: extraction.json } : {}),
+    ...(extraction.bodyJson !== undefined ? { bodyJson: extraction.bodyJson } : {}),
+    latencyMs: parts.latencyMs,
+    ...(parts.ttftMs !== undefined ? { ttftMs: parts.ttftMs } : {}),
     ...(statusOk
       ? {}
       : {
           error:
-            expected !== undefined
-              ? `expected HTTP ${expected} but received ${res.statusCode}`
-              : `received HTTP ${res.statusCode}`,
+            expectedStatus !== undefined
+              ? `expected HTTP ${expectedStatus} but received ${status}`
+              : `received HTTP ${status}`,
           errorKind: 'http' as const,
         }),
-    warnings: assembly.warnings,
+    warnings: extraction.warnings,
   };
 }
 

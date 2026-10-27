@@ -105,7 +105,7 @@ export function parseSuiteSource(
   const definition = result.data as SuiteDefinitionOutput;
   assertReferences(definition, doc, lineCounter, sourcePath);
   const suite = normalizeSuite(definition, { baseDir, sourcePath: absolute });
-  return { suite, hash: hashSuite(stripUndefined(definition)), sourcePath: absolute };
+  return { suite, hash: hashSuite(stripUndefined({ ...definition, $schema: undefined })), sourcePath: absolute };
 }
 
 export interface NormalizeOptions {
@@ -191,9 +191,16 @@ function normalizeCase(
   const checks = [...(defaults.checks ?? []), ...(caseSpec.checks ?? [])].map((check) =>
     normalizeCheck(check, baseDir),
   );
+  const turns = caseSpec.turns?.map((turn) => ({
+    input: turn.input,
+    ...(turn.vars ? { vars: turn.vars } : {}),
+    ...(turn.checks ? { checks: turn.checks.map((check) => normalizeCheck(check, baseDir)) } : {}),
+    ...(turn.extract ? { extract: turn.extract } : {}),
+  }));
   return {
     id: caseSpec.id,
     ...(caseSpec.input !== undefined ? { input: caseSpec.input } : {}),
+    ...(turns ? { turns } : {}),
     vars: { ...(defaults.vars ?? {}), ...(caseSpec.vars ?? {}) },
     ...(checks.length > 0 ? { checks } : {}),
     ...(caseSpec.repeat ?? defaults.repeat ? { repeat: caseSpec.repeat ?? defaults.repeat } : {}),
@@ -240,10 +247,37 @@ function assertReferences(
     if (caseSpec.checks) {
       groups.push({ checks: caseSpec.checks as Check[], path: ['cases', String(index), 'checks'] });
     }
+    caseSpec.turns?.forEach((turn, turnIndex) => {
+      if (turn.checks) {
+        groups.push({
+          checks: turn.checks as Check[],
+          path: ['cases', String(index), 'turns', String(turnIndex), 'checks'],
+        });
+      }
+    });
+    if (caseSpec.turns && caseSpec.input !== undefined) {
+      const segments = ['cases', String(index), 'input'];
+      const location = locate(doc, lineCounter, segments);
+      issues.push({
+        path: segments.join('.'),
+        message: 'a case has either "input" or "turns", not both',
+        ...(location ? { location: `${path.basename(sourcePath)}: ${location}` } : {}),
+      });
+    }
   });
 
   for (const group of groups) {
     group.checks.forEach((check, index) => {
+      if (check.type === 'tool_call' && !check.name && check.called !== false) {
+        const segments = [...group.path, String(index)];
+        const location = locate(doc, lineCounter, segments);
+        issues.push({
+          path: segments.join('.'),
+          message: 'tool_call check requires "name" (or "called: false" to expect no tool call)',
+          ...(location ? { location: `${path.basename(sourcePath)}: ${location}` } : {}),
+        });
+        return;
+      }
       if (check.type !== 'similarity' && check.type !== 'lexical_overlap') return;
       if (check.reference !== undefined || check.references !== undefined) return;
       const segments = [...group.path, String(index)];
@@ -329,4 +363,8 @@ function stripUndefined<T>(value: T): T {
 /** Parses a suite and returns only the definition (useful for `validate`). */
 export function safeParseSuite(raw: unknown): z.ZodSafeParseResult<SuiteDefinitionOutput> {
   return SuiteDefinitionSchema.safeParse(raw, PARSE_PARAMS);
+}
+
+export function allCaseChecks(caseSpec: CaseSpec): Check[] {
+  return [...(caseSpec.checks ?? []), ...(caseSpec.turns ?? []).flatMap((turn) => turn.checks ?? [])];
 }
