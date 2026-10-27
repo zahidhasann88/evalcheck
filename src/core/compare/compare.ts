@@ -1,3 +1,4 @@
+import { fisherLowerTail, minimumPValue } from '../utils/fisher.js';
 import type {
   CaseDelta,
   CaseResult,
@@ -16,7 +17,7 @@ export type MetricDirection = 'higher' | 'lower';
 export interface MetricSpec {
   name: string;
   direction: MetricDirection;
-  unit: 'ratio' | 'ms' | 'score';
+  unit: 'ratio' | 'ms' | 'score' | 'tokens' | 'cost';
   description: string;
 }
 
@@ -44,6 +45,18 @@ export const METRICS: Record<string, MetricSpec> = {
     direction: 'higher',
     unit: 'score',
     description: 'mean similarity score of the similarity checks',
+  },
+  tokens: {
+    name: 'tokens',
+    direction: 'lower',
+    unit: 'tokens',
+    description: 'mean total tokens per attempt',
+  },
+  cost: {
+    name: 'cost',
+    direction: 'lower',
+    unit: 'cost',
+    description: 'mean cost per attempt',
   },
 };
 
@@ -90,10 +103,19 @@ export function parseThresholds(specs: string[] = []): ThresholdSpec[] {
 
 export interface CompareOptions {
   thresholds?: ThresholdSpec[];
+  /**
+   * Significance level (e.g. 0.05). When set, a pass rate change counts as a regression or fix
+   * only if a one-sided Fisher exact test over the repeats is below this level; smaller changes
+   * are reported as noise.
+   */
+  significance?: number;
 }
 
 export function compareRuns(a: RunResult, b: RunResult, options: CompareOptions = {}): ComparisonResult {
   const thresholds = options.thresholds ?? [];
+  const significance = options.significance;
+  const noise: CaseDelta[] = [];
+  const underpowered: string[] = [];
 
   const casesA = new Map(a.cases.map((c) => [c.id, c]));
   const casesB = new Map(b.cases.map((c) => [c.id, c]));
@@ -112,11 +134,20 @@ export function compareRuns(a: RunResult, b: RunResult, options: CompareOptions 
       continue;
     }
 
-    const delta = makeDelta(id, classify(caseA, caseB), caseB, caseA);
+    let delta: CaseDelta;
+    if (significance !== undefined) {
+      const tested = classifySignificant(caseA, caseB, significance);
+      delta = makeDelta(id, tested.kind, caseB, caseA);
+      if (tested.pValue !== undefined) delta.pValue = round(tested.pValue, 4);
+      if (tested.underpowered) underpowered.push(id);
+    } else {
+      delta = makeDelta(id, classify(caseA, caseB), caseB, caseA);
+    }
 
     if (delta.kind === 'regression') regressions.push(delta);
     else if (delta.kind === 'fix') fixes.push(delta);
     else if (delta.kind === 'flaky') flaky.push(delta);
+    else if (delta.kind === 'noise') noise.push(delta);
 
     const simA = similarityScore(caseA);
     const simB = similarityScore(caseB);
@@ -149,6 +180,9 @@ export function compareRuns(a: RunResult, b: RunResult, options: CompareOptions 
   const simMeanA = mean(similarityDrift.map((d) => d.a));
   const simMeanB = mean(similarityDrift.map((d) => d.b));
 
+  const usageA = meanUsage(a);
+  const usageB = meanUsage(b);
+
   const metrics: Record<string, { delta: number; relative: number; valueA: number; valueB: number }> = {
     pass_rate: {
       delta: passRateDelta,
@@ -175,6 +209,12 @@ export function compareRuns(a: RunResult, b: RunResult, options: CompareOptions 
       valueB: round(simMeanB, 4),
     },
   };
+  if (usageA.tokens !== undefined && usageB.tokens !== undefined) {
+    metrics.tokens = change(usageA.tokens, usageB.tokens, 2);
+  }
+  if (usageA.cost !== undefined && usageB.cost !== undefined) {
+    metrics.cost = change(usageA.cost, usageB.cost, 8);
+  }
 
   const violations: ThresholdViolation[] = [];
   for (const threshold of thresholds) {
@@ -225,9 +265,26 @@ export function compareRuns(a: RunResult, b: RunResult, options: CompareOptions 
     regressions,
     fixes,
     flaky,
+    ...(significance !== undefined ? { noise, significance, underpowered } : {}),
     newCases,
     removedCases,
     similarityDrift,
+    ...(metrics.tokens
+      ? {
+          usage: {
+            tokensA: metrics.tokens.valueA,
+            tokensB: metrics.tokens.valueB,
+            tokensDeltaPct: round(metrics.tokens.relative * 100, 2),
+            ...(metrics.cost
+              ? {
+                  costA: metrics.cost.valueA,
+                  costB: metrics.cost.valueB,
+                  costDeltaPct: round(metrics.cost.relative * 100, 2),
+                }
+              : {}),
+          },
+        }
+      : {}),
     thresholds,
     violations,
     hasRegressions: regressions.length > 0 || violations.length > 0,
@@ -242,6 +299,37 @@ function classify(a: CaseResult, b: CaseResult): CaseDelta['kind'] {
   if (a.status === 'flaky' && b.status === 'passed') return 'fix';
   if (a.status === 'passed') return 'unchanged-pass';
   return 'unchanged-fail';
+}
+
+function repeatCounts(caseResult: CaseResult): { passed: number; failed: number } {
+  const total = caseResult.attempts.length;
+  const passed = Math.round(caseResult.passRate * total);
+  return { passed, failed: total - passed };
+}
+
+function classifySignificant(
+  a: CaseResult,
+  b: CaseResult,
+  alpha: number,
+): { kind: CaseDelta['kind']; pValue?: number; underpowered?: boolean } {
+  const countsA = repeatCounts(a);
+  const countsB = repeatCounts(b);
+  const totalA = countsA.passed + countsA.failed;
+  const totalB = countsB.passed + countsB.failed;
+  if (totalA === 0 || totalB === 0) return { kind: classify(a, b) };
+
+  const underpowered = minimumPValue(totalA, totalB) >= alpha;
+  const rateA = countsA.passed / totalA;
+  const rateB = countsB.passed / totalB;
+  if (rateA === rateB) {
+    return { kind: rateB === 1 ? 'unchanged-pass' : 'unchanged-fail', underpowered };
+  }
+  const pValue =
+    rateB < rateA
+      ? fisherLowerTail(countsA.passed, countsA.failed, countsB.passed, countsB.failed)
+      : fisherLowerTail(countsB.passed, countsB.failed, countsA.passed, countsA.failed);
+  if (pValue >= alpha) return { kind: 'noise', pValue, underpowered };
+  return { kind: rateB < rateA ? 'regression' : 'fix', pValue, underpowered };
 }
 
 function makeDelta(
@@ -283,6 +371,30 @@ function similarityScore(caseResult: CaseResult): number | undefined {
   }
   if (scores.length === 0) return undefined;
   return mean(scores);
+}
+
+function change(valueA: number, valueB: number, digits: number) {
+  return {
+    delta: round(valueB - valueA, digits),
+    relative: valueA === 0 ? 0 : round((valueB - valueA) / valueA, 4),
+    valueA: round(valueA, digits),
+    valueB: round(valueB, digits),
+  };
+}
+
+function meanUsage(result: RunResult): { tokens?: number; cost?: number } {
+  const tokens: number[] = [];
+  const costs: number[] = [];
+  for (const caseResult of result.cases) {
+    for (const attempt of caseResult.attempts) {
+      if (attempt.usage?.totalTokens !== undefined) tokens.push(attempt.usage.totalTokens);
+      if (attempt.usage?.cost !== undefined) costs.push(attempt.usage.cost);
+    }
+  }
+  return {
+    ...(tokens.length > 0 ? { tokens: mean(tokens) } : {}),
+    ...(costs.length > 0 ? { cost: mean(costs) } : {}),
+  };
 }
 
 function collectLatencies(result: RunResult): number[] {
@@ -338,4 +450,23 @@ function describeViolation(
     return `${metric.name} ${direction} by ${(observed.relative * 100).toFixed(2)}% which exceeds the allowed ${(threshold.value * 100).toFixed(2)}%`;
   }
   return `${metric.name} ${direction} by ${observed.delta} which exceeds the allowed ${threshold.value}`;
+}
+
+export function parseSignificance(value: string, flag = '--significance'): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed >= 1) {
+    throw new Error(`${flag} must be a number between 0 and 1, e.g. 0.05 (received "${value}")`);
+  }
+  return parsed;
+}
+
+export function significanceLabel(delta: CaseDelta): string {
+  if (delta.pValue === undefined) return '';
+  const pp = delta.passRateDelta * 100;
+  return ` (${pp > 0 ? '+' : ''}${pp.toFixed(0)}pp, p=${delta.pValue < 0.001 ? '<0.001' : delta.pValue.toFixed(3)})`;
+}
+
+export function underpoweredNote(comparison: ComparisonResult): string | undefined {
+  if (comparison.significance === undefined || !comparison.underpowered?.length) return undefined;
+  return `${comparison.underpowered.length} case(s) have too few repeats to reach p < ${comparison.significance}; use --repeat 4 or more to detect regressions in them`;
 }

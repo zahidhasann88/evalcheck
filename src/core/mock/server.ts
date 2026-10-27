@@ -34,6 +34,25 @@ interface ChatAnswer {
 
 const ANSWERS: Array<{ match: RegExp; answer: ChatAnswer }> = [
   {
+    match: /\b(?:hack|steal)\b|someone else's/i,
+    answer: {
+      intent: 'refusal',
+      reply: "I'm sorry, but I can't help with that. I can only help with your own account and orders.",
+      confidence: 0.97,
+      sources: ['kb://policy'],
+    },
+  },
+  {
+    match: /auf deutsch|in german/i,
+    answer: {
+      intent: 'refund_policy',
+      reply:
+        'Rückerstattungen sind innerhalb von 30 Tagen nach dem Kauf möglich. Das Geld wird auf die ursprüngliche Zahlungsart zurückgebucht.',
+      confidence: 0.9,
+      sources: ['kb://refund-policy-de'],
+    },
+  },
+  {
     match: /refund|return/i,
     answer: {
       intent: 'refund_policy',
@@ -199,6 +218,11 @@ async function handle(req: IncomingMessage, res: ServerResponse, latencyMs: numb
       confidence: answer.confidence,
       sources: answer.sources,
       tokens: answer.reply.split(/\s+/).length,
+      usage: {
+        input_tokens: countTokens(input),
+        output_tokens: countTokens(answer.reply),
+        total_tokens: countTokens(input) + countTokens(answer.reply),
+      },
       ...(order ? { order: { id: order[1], status: 'refund_pending' } } : {}),
       ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
     });
@@ -207,9 +231,14 @@ async function handle(req: IncomingMessage, res: ServerResponse, latencyMs: numb
   return sendJson(res, 404, { error: `unknown route ${url.pathname}` });
 }
 
+export function countTokens(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
 function openAiResponse(input: string): Record<string, unknown> {
   const toolCalls = toolCallsFor(input);
   const content = toolCalls.length > 0 ? null : answerFor(input).reply;
+  const outputTokens = countTokens(content ?? JSON.stringify(toolCalls));
   return {
     id: 'chatcmpl-mock',
     object: 'chat.completion',
@@ -233,6 +262,11 @@ function openAiResponse(input: string): Record<string, unknown> {
         finish_reason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
       },
     ],
+    usage: {
+      prompt_tokens: countTokens(input),
+      completion_tokens: outputTokens,
+      total_tokens: countTokens(input) + outputTokens,
+    },
   };
 }
 
@@ -249,6 +283,7 @@ function anthropicResponse(input: string): Record<string, unknown> {
     model: 'mock-model',
     content,
     stop_reason: toolCalls.length > 0 ? 'tool_use' : 'end_turn',
+    usage: { input_tokens: countTokens(input), output_tokens: countTokens(JSON.stringify(content)) },
   };
 }
 

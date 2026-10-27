@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://unpkg.com/evalcheck/dist/suite.schema.json
+
+name: billing
+description: Refund answers, checked for content, language and refusals.
+
+cases:
+  - id: refund-window
+    input: "What is your refund policy?"
+    repeat: 3
+    minPassRate: 0.66
+    checks:
+      - type: any_of
+        id: mentions-the-window
+        checks:
+          - type: contains
+            value: "30 days"
+          - type: contains
+            value: "one month"
+      - type: language
+        expected: en
+      - type: refusal
+
+  - id: refund-in-german
+    input: "Wie ist Ihre Rückgaberegel? Bitte auf Deutsch."
+    checks:
+      - type: language
+        expected: de
+      - type: contains
+        value: "30 Tagen"

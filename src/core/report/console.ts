@@ -1,4 +1,4 @@
-import type { CaseResult, CheckType, RunResult } from '../types.js';
+import type { CaseResult, CheckType, RunResult, TokenUsage } from '../types.js';
 import { round } from '../utils/stats.js';
 
 export interface ConsoleReporterOptions {
@@ -34,7 +34,7 @@ export function reportToConsole(result: RunResult, options: ConsoleReporterOptio
 
   lines.push('');
   lines.push(
-    c(ANSI.bold, `evalcheck · ${result.meta.suiteName}`) +
+    c(ANSI.bold, `evalcheck · ${result.meta.suiteName}${result.meta.variant ? ` (${result.meta.variant})` : ''}`) +
       (result.meta.replayed ? c(ANSI.gray, '  (replayed from a recording)') : ''),
   );
   lines.push(c(ANSI.gray, rule));
@@ -108,6 +108,11 @@ export function reportToConsole(result: RunResult, options: ConsoleReporterOptio
     }
   }
 
+  if (totals.usage) {
+    lines.push('');
+    lines.push(`${c(ANSI.bold, 'tokens')}   ${formatUsage(totals.usage)}`);
+  }
+
   const failing = result.cases.filter((caseResult) => caseResult.status === 'failed' || caseResult.status === 'error');
   if (failing.length > 0 && !options.quiet) {
     lines.push('');
@@ -115,6 +120,9 @@ export function reportToConsole(result: RunResult, options: ConsoleReporterOptio
     const max = options.maxFailures ?? 10;
     for (const caseResult of failing.slice(0, max)) {
       lines.push(`  ${c(ANSI.red, '✗')} ${c(ANSI.bold, caseResult.id)}`);
+      if (caseResult.minPassRate !== undefined) {
+        lines.push(`      ${c(ANSI.gray, passRateDetail(caseResult))}`);
+      }
       for (const check of caseResult.checks.filter((x) => x.passRate < 1)) {
         const count = check.total - check.passCount;
         lines.push(
@@ -150,6 +158,25 @@ export function reportToConsole(result: RunResult, options: ConsoleReporterOptio
   const text = lines.join('\n');
   options.write?.(text);
   return text;
+}
+
+export function formatUsage(usage: TokenUsage): string {
+  const parts: string[] = [];
+  if (usage.inputTokens !== undefined) parts.push(`in ${usage.inputTokens.toLocaleString('en-US')}`);
+  if (usage.outputTokens !== undefined) parts.push(`out ${usage.outputTokens.toLocaleString('en-US')}`);
+  if (usage.totalTokens !== undefined) parts.push(`total ${usage.totalTokens.toLocaleString('en-US')}`);
+  if (usage.cost !== undefined) parts.push(`cost ${formatCost(usage.cost)}`);
+  return parts.join('   ');
+}
+
+export function formatCost(cost: number): string {
+  return cost >= 1 ? cost.toFixed(2) : cost.toPrecision(3);
+}
+
+export function passRateDetail(caseResult: CaseResult): string {
+  const passed = Math.round(caseResult.passRate * caseResult.repeat);
+  const needed = Math.round((caseResult.minPassRate ?? 1) * 100);
+  return `${passed}/${caseResult.repeat} repeats passed, at least ${needed}% required`;
 }
 
 function flakyDetail(caseResult: CaseResult): string {

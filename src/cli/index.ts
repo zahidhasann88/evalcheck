@@ -13,6 +13,7 @@ import { registerValidateCommand } from './validate.js';
 import { registerReportCommand } from './report.js';
 import { registerServeMockCommand } from './serve-mock.js';
 import { registerSchemaCommand } from './schema.js';
+import { registerHistoryCommand } from './history.js';
 import { reportError } from './shared.js';
 import { EXIT_CONFIG_ERROR } from '../core/errors.js';
 
@@ -38,6 +39,7 @@ export function buildProgram(): Command {
   registerReportCommand(program);
   registerServeMockCommand(program);
   registerSchemaCommand(program);
+  registerHistoryCommand(program);
 
   return program;
 }

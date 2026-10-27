@@ -12,11 +12,12 @@ concurrency:
 
 jobs:
   check:
-    name: lint, typecheck, test (node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    name: lint, typecheck, test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         node: ['22.x', '24.x']
 
     steps:
@@ -39,7 +40,21 @@ jobs:
         run: pnpm typecheck
 
       - name: Unit and integration tests
+        if: ${{ !(matrix.os == 'ubuntu-latest' && matrix.node == '22.x') }}
         run: pnpm test
+
+      - name: Tests with coverage
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.x' }}
+        run: |
+          pnpm test:coverage
+          node -e "const t=require('./coverage/coverage-summary.json').total;console.log(['| Metric | Coverage |','| --- | ---: |',...['lines','statements','functions','branches'].map(k=>'| '+k+' | '+t[k].pct+'% |')].join(String.fromCharCode(10)))" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the coverage report
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.x' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage
 
       - name: Build
         run: pnpm build
@@ -71,6 +86,7 @@ jobs:
           for suite in examples/suites/*.yaml; do
             node dist/cli/index.js run "$suite" --out runs --format markdown >> "$GITHUB_STEP_SUMMARY"
           done
+          node dist/cli/index.js run examples/project --out runs/project --format markdown >> "$GITHUB_STEP_SUMMARY"
           node dist/cli/index.js run examples/suites/conversation.yaml --out runs --record runs/conversation.recording.json
 
       - name: Replay a recording with the endpoint stopped

@@ -8,6 +8,10 @@ import { noPiiGrader } from './pii.js';
 import { similarityGrader } from './similarity.js';
 import { customGrader } from './custom.js';
 import { toolCallGrader } from './tool-call.js';
+import { usageGrader } from './usage.js';
+import { refusalGrader } from './refusal.js';
+import { languageGrader } from './language.js';
+import { allOfGrader, anyOfGrader, notGrader } from './combinators.js';
 
 export const graders: GraderRegistry = {
   contains: containsGrader,
@@ -23,6 +27,12 @@ export const graders: GraderRegistry = {
   no_pii: noPiiGrader,
   custom: customGrader,
   tool_call: toolCallGrader,
+  usage: usageGrader,
+  refusal: refusalGrader,
+  language: languageGrader,
+  any_of: (ctx) => anyOfGrader(ctx),
+  all_of: (ctx) => allOfGrader(ctx),
+  not: (ctx) => notGrader(ctx),
 };
 
 export function getGrader(type: CheckType): Grader {
@@ -35,7 +45,7 @@ export function getGrader(type: CheckType): Grader {
 
 export { containsGrader, notContainsGrader, regexGrader, exactGrader, lengthGrader };
 export { jsonSchemaGrader, jsonPathGrader, latencyGrader, lexicalOverlapGrader, noPiiGrader, similarityGrader, customGrader };
-export { toolCallGrader };
+export { toolCallGrader, usageGrader, refusalGrader, languageGrader, anyOfGrader, allOfGrader, notGrader };
 export { cosineSimilarity } from './embedding/local.js';
 export { detectPii } from './pii.js';
 export type { PiiFinding } from './pii.js';

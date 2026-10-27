@@ -1,53 +1,61 @@
 import { Command } from 'commander';
 
-import { allCaseChecks, loadSuite } from '../core/config/loader.js';
+import { allCaseChecks, loadSuite, type LoadedSuite } from '../core/config/loader.js';
+import { expandSuitePaths } from '../core/config/shared.js';
 import { EXIT_OK } from '../core/errors.js';
 
 export function registerValidateCommand(program: Command): Command {
   return program
     .command('validate')
-    .description('Validate a suite file without calling the endpoint')
-    .argument('<suite>', 'path to the suite file (YAML or JSON)')
+    .description('Validate suite files without calling the endpoint')
+    .argument('<suites...>', 'suite files (YAML or JSON) or directories of suite files')
+    .option('--config <file>', 'shared config file (default: evalcheck.config.yaml next to each suite)')
     .option('--json', 'print the validation result as JSON')
-    .action(async (suitePath: string, options: { json?: boolean }) => {
-      const loaded = await loadSuite(suitePath);
-      const { suite, hash } = loaded;
-      const checkCount = suite.cases.reduce((sum, c) => sum + allCaseChecks(c).length, 0);
-      const checkTypes = new Set<string>();
-      for (const caseSpec of suite.cases) {
-        for (const check of allCaseChecks(caseSpec)) checkTypes.add(check.type);
+    .action(async (suitePaths: string[], options: { config?: string; json?: boolean }) => {
+      const files = await expandSuitePaths(suitePaths);
+      const summaries = [];
+      for (const file of files) {
+        const loaded = await loadSuite(file, options.config ? { config: options.config } : {});
+        summaries.push({ file, loaded, ...summarize(loaded) });
       }
 
       if (options.json) {
-        process.stdout.write(
-          `${JSON.stringify(
-            {
-              valid: true,
-              name: suite.name,
-              suiteHash: hash,
-              cases: suite.cases.length,
-              checks: checkCount,
-              checkTypes: [...checkTypes].sort(),
-              target: {
-                url: suite.target.url,
-                method: suite.target.method,
-                preset: suite.target.preset,
-                stream: suite.target.response.stream,
-                timeoutMs: suite.target.timeoutMs,
-              },
-            },
-            null,
-            2,
-          )}\n`,
-        );
+        const results = summaries.map(({ loaded, checkCount, checkTypes }) => ({
+          valid: true,
+          name: loaded.suite.name,
+          suiteHash: loaded.hash,
+          ...(loaded.configPath ? { config: loaded.configPath } : {}),
+          ...(loaded.suite.variants ? { variants: Object.keys(loaded.suite.variants) } : {}),
+          cases: loaded.suite.cases.length,
+          checks: checkCount,
+          checkTypes,
+          target: {
+            url: loaded.suite.target.url,
+            method: loaded.suite.target.method,
+            preset: loaded.suite.target.preset,
+            stream: loaded.suite.target.response.stream,
+            timeoutMs: loaded.suite.target.timeoutMs,
+          },
+        }));
+        process.stdout.write(`${JSON.stringify(results.length === 1 ? results[0] : results, null, 2)}\n`);
       } else {
-        process.stdout.write(`✔ ${suitePath} is valid\n`);
-        process.stdout.write(`  suite      ${suite.name}\n`);
-        process.stdout.write(`  hash       ${hash}\n`);
-        process.stdout.write(`  target     ${suite.target.method} ${suite.target.url}\n`);
-        process.stdout.write(`  cases      ${suite.cases.length}\n`);
-        process.stdout.write(`  checks     ${checkCount} (${[...checkTypes].sort().join(', ') || 'none'})\n`);
+        for (const { file, loaded, checkCount, checkTypes } of summaries) {
+          const { suite, hash } = loaded;
+          process.stdout.write(`✔ ${file} is valid\n`);
+          process.stdout.write(`  suite      ${suite.name}\n`);
+          process.stdout.write(`  hash       ${hash}\n`);
+          if (loaded.configPath) process.stdout.write(`  config     ${loaded.configPath}\n`);
+          if (suite.variants) process.stdout.write(`  variants   ${Object.keys(suite.variants).join(', ')}\n`);
+          process.stdout.write(`  target     ${suite.target.method} ${suite.target.url}\n`);
+          process.stdout.write(`  cases      ${suite.cases.length}\n`);
+          process.stdout.write(`  checks     ${checkCount} (${checkTypes.join(', ') || 'none'})\n`);
+        }
       }
       process.exitCode = EXIT_OK;
     });
+}
+
+function summarize(loaded: LoadedSuite): { checkCount: number; checkTypes: string[] } {
+  const checks = loaded.suite.cases.flatMap((caseSpec) => allCaseChecks(caseSpec));
+  return { checkCount: checks.length, checkTypes: [...new Set(checks.map((check) => check.type))].sort() };
 }

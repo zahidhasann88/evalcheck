@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://unpkg.com/evalcheck/dist/config.schema.json
+
+# Shared by every suite in this directory: evalcheck run examples/project
+target:
+  url: http://127.0.0.1:8787/v1/chat/completions
+  preset: openai-chat
+  model: mock-model
+  system: You are a friendly support agent.
+  response:
+    textPath: "$.choices[0].message.content"
+  pricing:
+    inputPerMillion: 0.15
+    outputPerMillion: 0.6
+  timeoutMs: 10000
+
+defaults:
+  checks:
+    - type: usage
+      id: token-budget
+      maxTotalTokens: 300
+      maxCost: 0.001

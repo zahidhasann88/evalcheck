@@ -1,5 +1,7 @@
 import type { CaseResult, ComparisonResult, RunResult } from '../types.js';
+import { significanceLabel, underpoweredNote } from '../compare/compare.js';
 import { percentile } from '../utils/stats.js';
+import { formatCost, formatUsage, passRateDetail } from './console.js';
 
 export interface MarkdownReporterOptions {
   /** Maximum number of failing cases shown in detail. */
@@ -21,8 +23,9 @@ export function reportToMarkdown(result: RunResult, options: MarkdownReporterOpt
   const ok = failing.length === 0 && flaky.length === 0 && (!comparison || isCleanComparison(comparison));
 
   const lines: string[] = [];
-  lines.push(markdownMarker(meta.suiteName));
-  lines.push(`### ${ok ? '✅' : '❌'} evalcheck · ${escapeText(meta.suiteName)}`);
+  const title = meta.variant ? `${meta.suiteName} (${meta.variant})` : meta.suiteName;
+  lines.push(markdownMarker(meta.variant ? `${meta.suiteName}-${meta.variant}` : meta.suiteName));
+  lines.push(`### ${ok ? '✅' : '❌'} evalcheck · ${escapeText(title)}`);
   lines.push('');
   if (meta.replayed) {
     lines.push('_Graded from a recording, the endpoint was not called._');
@@ -36,6 +39,11 @@ export function reportToMarkdown(result: RunResult, options: MarkdownReporterOpt
     `| ${totals.cases} | ${totals.passed} | ${totals.failed + totals.errored} | ${totals.flaky} | ${totals.skipped} | ` +
       `${formatPct(totals.passRate)} | ${latencies.length > 0 ? formatMs(percentile(latencies, 95)) : 'n/a'} |`,
   );
+
+  if (totals.usage) {
+    lines.push('');
+    lines.push(`Tokens: ${formatUsage(totals.usage).replace(/ {3}/g, ' · ')}`);
+  }
 
   if (comparison) {
     lines.push('');
@@ -95,6 +103,17 @@ function renderComparison(comparison: ComparisonResult): string[] {
   lines.push(
     `| Latency p95 | ${formatMs(latency.p95A)} | ${formatMs(latency.p95B)} | ${formatSigned(latency.p95DeltaPct, 1)}% |`,
   );
+  if (comparison.usage) {
+    const usage = comparison.usage;
+    lines.push(
+      `| Tokens per attempt | ${Math.round(usage.tokensA)} | ${Math.round(usage.tokensB)} | ${formatSigned(usage.tokensDeltaPct, 1)}% |`,
+    );
+    if (usage.costA !== undefined && usage.costB !== undefined && usage.costDeltaPct !== undefined) {
+      lines.push(
+        `| Cost per attempt | ${formatCost(usage.costA)} | ${formatCost(usage.costB)} | ${formatSigned(usage.costDeltaPct, 1)}% |`,
+      );
+    }
+  }
   lines.push('');
 
   const summary = [
@@ -102,6 +121,7 @@ function renderComparison(comparison: ComparisonResult): string[] {
     `**${comparison.fixes.length}** ${plural(comparison.fixes.length, 'fix', 'fixes')}`,
     `**${comparison.newCases.length}** new`,
     `**${comparison.removedCases.length}** removed`,
+    ...(comparison.noise ? [`**${comparison.noise.length}** within noise`] : []),
   ];
   lines.push(summary.join(' · '));
 
@@ -110,15 +130,22 @@ function renderComparison(comparison: ComparisonResult): string[] {
     lines.push('Regressions:');
     for (const regression of comparison.regressions) {
       const checks = regression.failingChecks.length > 0 ? regression.failingChecks.join(', ') : 'status changed';
-      lines.push(`- ❌ \`${regression.id}\` (${regression.a} → ${regression.b}): ${escapeText(checks)}`);
+      lines.push(
+        `- ❌ \`${regression.id}\` (${regression.a} → ${regression.b})${significanceLabel(regression)}: ${escapeText(checks)}`,
+      );
     }
   }
   if (comparison.fixes.length > 0) {
     lines.push('');
     lines.push('Fixed:');
     for (const fix of comparison.fixes) {
-      lines.push(`- ✅ \`${fix.id}\``);
+      lines.push(`- ✅ \`${fix.id}\`${significanceLabel(fix)}`);
     }
+  }
+  const note = underpoweredNote(comparison);
+  if (note) {
+    lines.push('');
+    lines.push(`_Note: ${escapeText(note)}._`);
   }
   if (comparison.violations.length > 0) {
     lines.push('');
@@ -142,6 +169,9 @@ function renderCase(caseResult: CaseResult, maxResponseChars: number): string[] 
     `<summary><code>${escapeHtml(caseResult.id)}</code> · ${failedChecks.length} failing ${plural(failedChecks.length, 'check')}</summary>`,
   );
   lines.push('');
+  if (caseResult.minPassRate !== undefined) {
+    lines.push(`- ${passRateDetail(caseResult)}`);
+  }
   for (const check of failedChecks) {
     const reason = check.reasons[0] ?? 'failed';
     lines.push(`- **${escapeText(check.id)}** (${check.type}): ${escapeText(reason)}`);

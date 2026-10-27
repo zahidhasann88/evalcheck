@@ -40,6 +40,7 @@
       "default": "./dist/core/index.js"
     },
     "./suite.schema.json": "./dist/suite.schema.json",
+    "./config.schema.json": "./dist/config.schema.json",
     "./package.json": "./package.json"
   },
   "files": [
@@ -49,12 +50,13 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsup && node dist/cli/index.js schema --out dist/suite.schema.json",
+    "build": "tsup && node dist/cli/index.js schema --out dist/suite.schema.json && node dist/cli/index.js schema --config --out dist/config.schema.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "test:slow": "EVALCHECK_SLOW=1 vitest run",
     "prepack": "pnpm run build"
   },
@@ -79,6 +81,7 @@
     "@huggingface/transformers": "^4.3.1",
     "@types/node": "^26.6.5",
     "@typescript/typescript6": "^6.0.2",
+    "@vitest/coverage-v8": "5.0.5",
     "eslint": "^10.13.0",
     "tsup": "^9.0.0",
     "typescript": "^7.0.2",

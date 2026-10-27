@@ -2,6 +2,8 @@
 
 import { z } from 'zod';
 
+import type { Check } from '../types.js';
+
 export const NormalizerSchema = z.enum([
   'trim',
   'lowercase',
@@ -163,6 +165,72 @@ export const ToolCallCheckSchema = z
   .strict()
   .describe('Passes when the response calls a tool (function), optionally with the expected arguments.');
 
+export const UsageCheckSchema = z
+  .object({
+    type: z.literal('usage'),
+    ...checkBase,
+    maxInputTokens: z.number().int().min(0).optional(),
+    maxOutputTokens: z.number().int().min(0).optional(),
+    maxTotalTokens: z.number().int().min(0).optional(),
+    maxCost: z.number().min(0).optional(),
+  })
+  .strict()
+  .describe('Passes when the token usage (and cost) reported by the endpoint stays within a budget.');
+
+export const RefusalCheckSchema = z
+  .object({
+    type: z.literal('refusal'),
+    ...checkBase,
+    refused: z.boolean().optional(),
+    phrases: z.array(z.string().min(1)).optional(),
+  })
+  .strict()
+  .describe("Passes when the answer is not a refusal (\"I can't help with that\"), or with refused: true when it is.");
+
+const LanguageCodeSchema = z.string().regex(/^[A-Za-z]{2}$/, 'use a two-letter ISO 639-1 code such as "en"');
+
+export const LanguageCheckSchema = z
+  .object({
+    type: z.literal('language'),
+    ...checkBase,
+    expected: z.union([LanguageCodeSchema, z.array(LanguageCodeSchema).min(1)]),
+  })
+  .strict()
+  .describe('Passes when the answer is written in the expected language (two-letter code, e.g. "en").');
+
+export const AnyOfCheckSchema = z
+  .object({
+    type: z.literal('any_of'),
+    ...checkBase,
+    get checks(): z.ZodArray<z.ZodType<Check>> {
+      return z.array(CheckSchema).min(1, 'any_of needs at least one check');
+    },
+  })
+  .strict()
+  .describe('Passes when at least one of its checks passes.');
+
+export const AllOfCheckSchema = z
+  .object({
+    type: z.literal('all_of'),
+    ...checkBase,
+    get checks(): z.ZodArray<z.ZodType<Check>> {
+      return z.array(CheckSchema).min(1, 'all_of needs at least one check');
+    },
+  })
+  .strict()
+  .describe('Passes when all of its checks pass. Useful inside any_of and not.');
+
+export const NotCheckSchema = z
+  .object({
+    type: z.literal('not'),
+    ...checkBase,
+    get check(): z.ZodType<Check> {
+      return CheckSchema;
+    },
+  })
+  .strict()
+  .describe('Passes when its check fails.');
+
 export const CheckSchema = z.discriminatedUnion('type', [
   ContainsCheckSchema,
   NotContainsCheckSchema,
@@ -177,6 +245,12 @@ export const CheckSchema = z.discriminatedUnion('type', [
   NoPiiCheckSchema,
   CustomCheckSchema,
   ToolCallCheckSchema,
+  UsageCheckSchema,
+  RefusalCheckSchema,
+  LanguageCheckSchema,
+  AnyOfCheckSchema,
+  AllOfCheckSchema,
+  NotCheckSchema,
 ]);
 
 export const RequestPresetSchema = z.enum([
@@ -210,8 +284,21 @@ export const ResponseSpecSchema = z
     chunkPath: z.string().min(1).optional(),
     stream: z.union([z.boolean(), z.literal('sse')]).optional(),
     status: z.number().int().min(100).max(599).optional(),
+    usagePath: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('JSONPath to the token usage object when it is not found automatically.'),
   })
   .strict();
+
+export const PricingSchema = z
+  .object({
+    inputPerMillion: z.number().min(0),
+    outputPerMillion: z.number().min(0),
+  })
+  .strict()
+  .describe('Prices per million input and output tokens, used to compute the cost of every reply.');
 
 export const TargetSpecSchema = z
   .object({
@@ -225,6 +312,7 @@ export const TargetSpecSchema = z
     body: z.unknown().optional(),
     preset: RequestPresetSchema.default('none'),
     response: ResponseSpecSchema.optional(),
+    pricing: PricingSchema.optional(),
     timeoutMs: z.number().int().min(1).max(600_000).default(30_000),
     retries: RetryConfigSchema.optional(),
     model: z.string().optional(),
@@ -234,9 +322,17 @@ export const TargetSpecSchema = z
   })
   .strict();
 
+const MinPassRateSchema = z
+  .number()
+  .min(0)
+  .max(1)
+  .optional()
+  .describe('Share of repeats (0 to 1) that must pass, e.g. 0.8 passes a case when 8 of 10 repeats pass.');
+
 export const DefaultsSchema = z
   .object({
     repeat: z.number().int().min(1).max(100).optional(),
+    minPassRate: MinPassRateSchema,
     checks: z.array(CheckSchema).optional(),
     vars: z.record(z.string(), z.unknown()).optional(),
   })
@@ -270,6 +366,7 @@ export const CaseSpecSchema = z
     vars: z.record(z.string(), z.unknown()).optional(),
     checks: z.array(CheckSchema).optional(),
     repeat: z.number().int().min(1).max(100).optional(),
+    minPassRate: MinPassRateSchema,
     description: z.string().optional(),
     tags: z.array(z.string()).optional(),
     skip: z.boolean().optional(),
@@ -294,6 +391,13 @@ export const SuiteDefinitionSchema = z
     defaults: DefaultsSchema.optional(),
     cases: z.array(CaseSpecSchema).optional(),
     embedding: EmbeddingConfigSchema.optional(),
+    variants: z
+      .record(
+        z.string().regex(/^[A-Za-z0-9._-]+$/, 'variant names may only contain letters, digits, dot, underscore and dash'),
+        TargetSpecSchema.partial(),
+      )
+      .optional()
+      .describe('A/B testing: named overrides of the target. Every variant runs the same cases and the results are compared side by side.'),
   })
   .strict();
 

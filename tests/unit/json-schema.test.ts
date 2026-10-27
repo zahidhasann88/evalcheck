@@ -5,7 +5,7 @@ import Ajv from 'ajv';
 import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
-import { suiteJsonSchema, SUITE_SCHEMA_URL } from '../../src/core/config/json-schema.js';
+import { configJsonSchema, suiteJsonSchema, SUITE_SCHEMA_URL } from '../../src/core/config/json-schema.js';
 
 const examplesDir = path.resolve(__dirname, '../../examples/suites');
 
@@ -51,5 +51,26 @@ describe('suite JSON Schema', () => {
   it('describes every check type', () => {
     const text = JSON.stringify(suiteJsonSchema());
     expect(text).toContain('Passes when the answer contains some text.');
+  });
+});
+
+describe('config JSON Schema', () => {
+  const projectDir = path.resolve(__dirname, '../../examples/project');
+
+  it('accepts the example project and its shared config', async () => {
+    const ajv = new Ajv({ strict: false, allErrors: true });
+    const validateSuite = ajv.compile(suiteJsonSchema());
+    const validateConfig = ajv.compile(configJsonSchema());
+    for (const file of await readdir(projectDir)) {
+      const document = parseYaml(await readFile(path.join(projectDir, file), 'utf8')) as unknown;
+      const validate = file === 'evalcheck.config.yaml' ? validateConfig : validateSuite;
+      expect(validate(document), `${file}: ${JSON.stringify(validate.errors)}`).toBe(true);
+    }
+  });
+
+  it('rejects unknown keys in the config', () => {
+    const validate = new Ajv({ strict: false }).compile(configJsonSchema());
+    expect(validate({ target: { url: 'http://x' } })).toBe(true);
+    expect(validate({ cases: [] })).toBe(false);
   });
 });

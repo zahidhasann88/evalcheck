@@ -22,7 +22,15 @@ export {
   DEFAULT_EMBEDDING_MODEL,
 } from './config/loader.js';
 export { SuiteDefinitionSchema, CheckSchema } from './config/schema.js';
-export { suiteJsonSchema, SUITE_SCHEMA_URL } from './config/json-schema.js';
+export { suiteJsonSchema, configJsonSchema, SUITE_SCHEMA_URL, CONFIG_SCHEMA_URL } from './config/json-schema.js';
+export {
+  loadSharedConfig,
+  findSharedConfig,
+  applySharedConfig,
+  expandSuitePaths,
+  CONFIG_FILE_NAMES,
+} from './config/shared.js';
+export type { SharedConfig } from './config/shared.js';
 export { loadDataset, parseCsv } from './config/dataset.js';
 export type { Dataset, DatasetOptions } from './config/dataset.js';
 
@@ -48,6 +56,8 @@ export { buildRequest } from './http/request.js';
 export { executeRequest } from './http/client.js';
 export { extractResponse, assembleSse } from './http/extract.js';
 export { parseSseChunk, isDoneEvent } from './http/sse.js';
+export { extractUsage, withCost, sumUsage } from './http/usage.js';
+export type { Pricing } from './http/usage.js';
 export type { HttpCallOptions, HttpOutcome } from './http/client.js';
 export type { ExtractionResult, ResponseSpec, SseAssembly } from './http/extract.js';
 
@@ -55,6 +65,9 @@ export { graders, getGrader } from './graders/index.js';
 export { createLocalEmbeddingProvider, cosineSimilarity, defaultCacheDir } from './graders/embedding/local.js';
 export { detectPii } from './graders/pii.js';
 export { findToolCalls, argsMatch } from './graders/tool-call.js';
+export { findRefusal } from './graders/refusal.js';
+export { detectLanguage } from './graders/language.js';
+export type { LanguageDetection } from './graders/language.js';
 export type { ToolCall } from './graders/tool-call.js';
 export { clearSchemaCache } from './graders/json-schema.js';
 export { clearCustomCheckCache, loadCustomCheck } from './graders/custom.js';
@@ -77,7 +90,15 @@ export { RateLimiter, pool } from './runner/limiter.js';
 export { startMockServer, createMockServer, answerFor } from './mock/server.js';
 export type { MockServerHandle, MockServerOptions } from './mock/server.js';
 
-export { compareRuns, parseThresholds, METRICS } from './compare/compare.js';
+export {
+  compareRuns,
+  parseThresholds,
+  parseSignificance,
+  significanceLabel,
+  underpoweredNote,
+  METRICS,
+} from './compare/compare.js';
+export { fisherLowerTail, minimumPValue } from './utils/fisher.js';
 export type { CompareOptions, MetricSpec } from './compare/compare.js';
 
 export { reportToConsole } from './report/console.js';
@@ -85,6 +106,10 @@ export { reportToJson, parseRunFile, JSON_REPORT_SCHEMA_VERSION } from './report
 export { reportToJunit } from './report/junit.js';
 export { reportToHtml, diffLines } from './report/html.js';
 export { reportToMarkdown, markdownMarker } from './report/markdown.js';
+export { compareVariants, variantsToConsole, variantsToMarkdown } from './report/variants.js';
+export { buildHistory, historyToConsole, historyToMarkdown, historyToHtml, trendSummary } from './report/history.js';
+export type { HistoryOptions, HistoryPoint, HistorySeries } from './report/history.js';
+export type { VariantColumn, VariantComparison } from './report/variants.js';
 export type { MarkdownReporterOptions } from './report/markdown.js';
 
 export {

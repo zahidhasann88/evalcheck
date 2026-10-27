@@ -13,6 +13,7 @@ import {
 import { getGrader } from '../graders/index.js';
 import { buildRequest, type BuiltRequest } from '../http/request.js';
 import { executeRequest, type HttpOutcome } from '../http/client.js';
+import { extractUsage, sumUsage, withCost } from '../http/usage.js';
 import { jsonPathQuery } from '../utils/jsonpath.js';
 import { createInterpolator, type Interpolator, type TemplateScope } from '../utils/interpolate.js';
 import { createRedactor, redactHeaders, type Redactor } from '../utils/redact.js';
@@ -33,6 +34,7 @@ import type {
   Logger,
   RunResult,
   Suite,
+  TokenUsage,
   TurnResult,
 } from '../types.js';
 import { pool, RateLimiter, defaultSleep, type Sleep } from './limiter.js';
@@ -49,6 +51,8 @@ export interface RunOptions {
   rps?: number;
   /** Overrides the per-case repeat count. */
   repeat?: number;
+  /** Overrides the per-case minimum pass rate. */
+  minPassRate?: number;
   /** Glob pattern; only cases whose id matches are executed. */
   filter?: string;
   tag?: string;
@@ -66,6 +70,8 @@ export interface RunOptions {
   record?: Cassette;
   /** Responses are taken from this recording instead of calling the endpoint. */
   replay?: Cassette;
+  /** Name of the target variant, recorded in the run metadata. */
+  variant?: string;
 }
 
 export async function runSuite(options: RunOptions): Promise<RunResult> {
@@ -139,6 +145,7 @@ export async function runSuite(options: RunOptions): Promise<RunResult> {
       endpointUnreachable: endpointErrors.length > 0,
       ...(endpointErrors.length > 0 ? { endpointErrors } : {}),
       ...(options.replay ? { replayed: true } : {}),
+      ...(options.variant ? { variant: options.variant } : {}),
     },
     totals,
     cases: redactedCases,
@@ -204,9 +211,12 @@ async function runCase(args: RunCaseArgs): Promise<CaseResult> {
   const passed = attemptOutcomes.filter(Boolean).length;
   const passRate = attempts.length === 0 ? 0 : passed / attempts.length;
 
+  const minPassRate = options.minPassRate ?? caseSpec.minPassRate;
   let status: CaseStatus;
   if (attempts.length === 0) {
     status = 'skipped';
+  } else if (minPassRate !== undefined) {
+    status = passRate >= minPassRate ? 'passed' : 'failed';
   } else if (passed === attempts.length) {
     status = 'passed';
   } else if (passed === 0) {
@@ -223,6 +233,7 @@ async function runCase(args: RunCaseArgs): Promise<CaseResult> {
     status,
     passRate,
     repeat,
+    ...(minPassRate !== undefined ? { minPassRate } : {}),
     tags: caseSpec.tags ?? [],
     ...(caseSpec.description ? { description: caseSpec.description } : {}),
     checks,
@@ -312,6 +323,7 @@ async function runAttempt(args: RunAttemptArgs): Promise<AttemptResult> {
     ...(final.bodyJson !== undefined ? { bodyJson: final.bodyJson } : {}),
     latencyMs: turns.reduce((sum, t) => sum + t.latencyMs, 0),
     ...(final.ttftMs !== undefined ? { ttftMs: final.ttftMs } : {}),
+    ...withUsage(sumUsage(turns.map((t) => t.usage))),
     timestamp: turns[0]!.timestamp,
     request: final.request,
     ...(final.responseHeaders ? { responseHeaders: final.responseHeaders } : {}),
@@ -347,6 +359,10 @@ async function runTurn(args: RunAttemptArgs, turnArgs: TurnArgs): Promise<TurnRe
 
   const request = buildRequest({ suite, caseSpec, interpolator, scope });
   const outcome = await send(args, request, exchangeKey(caseSpec.id, index, turnIndex));
+  const usage = withCost(
+    extractUsage(outcome.bodyText, outcome.bodyJson, suite.target.response.stream, suite.target.response.usagePath),
+    suite.target.pricing,
+  );
 
   const turn: TurnResult = {
     index: turnIndex,
@@ -360,6 +376,7 @@ async function runTurn(args: RunAttemptArgs, turnArgs: TurnArgs): Promise<TurnRe
     ...(outcome.bodyJson !== undefined ? { bodyJson: outcome.bodyJson } : {}),
     latencyMs: outcome.latencyMs,
     ...(outcome.ttftMs !== undefined ? { ttftMs: outcome.ttftMs } : {}),
+    ...withUsage(usage),
     timestamp: new Date().toISOString(),
     request: {
       method: request.method,
@@ -429,6 +446,10 @@ async function send(args: RunAttemptArgs, request: BuiltRequest, key: string): P
   });
   if (options.record) options.record.exchanges[key] = recordExchange(request, outcome);
   return outcome;
+}
+
+function withUsage(usage: TokenUsage | undefined): { usage?: TokenUsage } {
+  return usage ? { usage } : {};
 }
 
 function extractVars(turn: TurnResult, extract: Record<string, string>): Record<string, unknown> {
@@ -558,6 +579,7 @@ export function computeTotals(cases: CaseResult[]): RunResult['totals'] {
   let checks = 0;
   let checksPassed = 0;
   let requests = 0;
+  const usages: TokenUsage[] = [];
 
   for (const caseResult of cases) {
     switch (caseResult.status) {
@@ -583,6 +605,7 @@ export function computeTotals(cases: CaseResult[]): RunResult['totals'] {
     }
     for (const attempt of caseResult.attempts) {
       requests += attempt.attempts;
+      if (attempt.usage) usages.push(attempt.usage);
     }
   }
 
@@ -601,6 +624,7 @@ export function computeTotals(cases: CaseResult[]): RunResult['totals'] {
     checksPassed,
     checksFailed: checks - checksPassed,
     requests,
+    ...(usages.length > 0 ? { usage: { ...sumUsage(usages), attempts: usages.length } } : {}),
   };
 }
 

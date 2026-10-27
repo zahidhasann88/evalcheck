@@ -1,6 +1,13 @@
 import { Command } from 'commander';
 
-import { compareRuns, parseThresholds } from '../core/compare/compare.js';
+import {
+  compareRuns,
+  parseSignificance,
+  parseThresholds,
+  significanceLabel,
+  underpoweredNote,
+} from '../core/compare/compare.js';
+import { formatCost } from '../core/report/console.js';
 import { parseRunFile } from '../core/report/json.js';
 import { reportToJson } from '../core/report/json.js';
 import { EXIT_CHECK_FAILED, EXIT_OK } from '../core/errors.js';
@@ -9,6 +16,7 @@ import { readFile } from 'node:fs/promises';
 export interface CompareCommandOptions {
   failOnRegression?: boolean;
   threshold?: string[];
+  significance?: string;
   format?: string;
 }
 
@@ -20,6 +28,7 @@ export function registerCompareCommand(program: Command): Command {
     .argument('<b>', 'new run file (JSON)')
     .option('--fail-on-regression', 'exit with code 1 when a case regresses')
     .option('--threshold <spec>', 'threshold, e.g. pass_rate=-0.02 or latency_p95=+20%', collect, [])
+    .option('--significance <alpha>', 'only report pass rate changes that are statistically significant, e.g. 0.05')
     .option('--format <format>', 'console | json', 'console')
     .action(async (a: string, b: string, options: CompareCommandOptions) => {
       process.exitCode = await compareCommand(a, b, options);
@@ -38,7 +47,8 @@ export async function compareCommand(
   const a = parseRunFile(await readFile(aPath, 'utf8'));
   const b = parseRunFile(await readFile(bPath, 'utf8'));
   const thresholds = parseThresholds(options.threshold ?? []);
-  const comparison = compareRuns(a, b, { thresholds });
+  const significance = options.significance !== undefined ? parseSignificance(options.significance) : undefined;
+  const comparison = compareRuns(a, b, { thresholds, ...(significance !== undefined ? { significance } : {}) });
 
   if ((options.format ?? 'console').toLowerCase() === 'json') {
     process.stdout.write(`${reportToJson({ ...b, comparison })}\n`);
@@ -69,6 +79,16 @@ function printComparison(comparison: NonNullable<ReturnType<typeof compareRuns>>
   out.write(
     `latency    p50 ${comparison.latency.p50A}ms → ${comparison.latency.p50B}ms (${comparison.latency.p50DeltaPct >= 0 ? '+' : ''}${comparison.latency.p50DeltaPct.toFixed(1)}%)   p95 ${comparison.latency.p95A}ms → ${comparison.latency.p95B}ms (${comparison.latency.p95DeltaPct >= 0 ? '+' : ''}${comparison.latency.p95DeltaPct.toFixed(1)}%)\n`,
   );
+  if (comparison.usage) {
+    const usage = comparison.usage;
+    out.write(
+      `tokens     ${Math.round(usage.tokensA)} → ${Math.round(usage.tokensB)} per attempt (${usage.tokensDeltaPct >= 0 ? '+' : ''}${usage.tokensDeltaPct.toFixed(1)}%)` +
+        (usage.costA !== undefined && usage.costB !== undefined && usage.costDeltaPct !== undefined
+          ? `   cost ${formatCost(usage.costA)} → ${formatCost(usage.costB)} (${usage.costDeltaPct >= 0 ? '+' : ''}${usage.costDeltaPct.toFixed(1)}%)`
+          : '') +
+        '\n',
+    );
+  }
   out.write('\nper check type\n');
   for (const delta of comparison.checkTypeDeltas) {
     out.write(
@@ -80,16 +100,24 @@ function printComparison(comparison: NonNullable<ReturnType<typeof compareRuns>>
     out.write(`\n✗ ${comparison.regressions.length} regression(s)\n`);
     for (const delta of comparison.regressions) {
       out.write(
-        `  ${delta.id}: ${delta.a} → ${delta.b}${delta.failingChecks.length ? ` (${delta.failingChecks.join(', ')})` : ''}\n`,
+        `  ${delta.id}: ${delta.a} → ${delta.b}${significanceLabel(delta)}${delta.failingChecks.length ? ` (${delta.failingChecks.join(', ')})` : ''}\n`,
       );
     }
   }
   if (comparison.fixes.length > 0) {
     out.write(`\n✔ ${comparison.fixes.length} fix(es)\n`);
     for (const delta of comparison.fixes) {
-      out.write(`  ${delta.id}: ${delta.a} → ${delta.b}\n`);
+      out.write(`  ${delta.id}: ${delta.a} → ${delta.b}${significanceLabel(delta)}\n`);
     }
   }
+  if (comparison.noise && comparison.noise.length > 0) {
+    out.write(`\n~ ${comparison.noise.length} change(s) within noise (p ≥ ${comparison.significance})\n`);
+    for (const delta of comparison.noise) {
+      out.write(`  ${delta.id}${significanceLabel(delta)}\n`);
+    }
+  }
+  const note = underpoweredNote(comparison);
+  if (note) out.write(`\nnote: ${note}\n`);
   if (comparison.flaky.length > 0) {
     out.write(`\n⚠ ${comparison.flaky.length} case(s) became flaky\n`);
     for (const delta of comparison.flaky) {

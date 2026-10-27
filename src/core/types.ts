@@ -12,6 +12,12 @@ export const CHECK_TYPES = [
   'no_pii',
   'custom',
   'tool_call',
+  'any_of',
+  'all_of',
+  'not',
+  'usage',
+  'refusal',
+  'language',
 ] as const;
 
 export type CheckType = (typeof CHECK_TYPES)[number];
@@ -141,6 +147,47 @@ export interface ToolCallCheck extends CheckBase {
   path?: string;
 }
 
+export interface UsageCheck extends CheckBase {
+  type: 'usage';
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
+  maxTotalTokens?: number;
+  /** Maximum cost of the reply, in the currency of `target.pricing`. */
+  maxCost?: number;
+}
+
+export interface RefusalCheck extends CheckBase {
+  type: 'refusal';
+  /** When true the answer must be a refusal; by default it must not be one. */
+  refused?: boolean;
+  /** Extra phrases that count as a refusal (case-insensitive). */
+  phrases?: string[];
+}
+
+export interface LanguageCheck extends CheckBase {
+  type: 'language';
+  /** ISO 639-1 code(s) the answer may be written in. */
+  expected: string | string[];
+}
+
+export interface AnyOfCheck extends CheckBase {
+  type: 'any_of';
+  /** Passes when at least one of these checks passes. */
+  checks: Check[];
+}
+
+export interface AllOfCheck extends CheckBase {
+  type: 'all_of';
+  /** Passes when every one of these checks passes. */
+  checks: Check[];
+}
+
+export interface NotCheck extends CheckBase {
+  type: 'not';
+  /** Passes when this check fails. */
+  check: Check;
+}
+
 export type Check =
   | ContainsCheck
   | NotContainsCheck
@@ -154,7 +201,13 @@ export type Check =
   | LexicalOverlapCheck
   | NoPiiCheck
   | CustomCheck
-  | ToolCallCheck;
+  | ToolCallCheck
+  | UsageCheck
+  | RefusalCheck
+  | LanguageCheck
+  | AnyOfCheck
+  | AllOfCheck
+  | NotCheck;
 
 export type RequestPreset = 'openai-chat' | 'anthropic-messages' | 'generic-json' | 'none';
 
@@ -179,7 +232,11 @@ export interface TargetSpec {
     stream: StreamMode;
     /** Expected HTTP status; any 2xx when omitted. */
     status?: number;
+    /** JSONPath to the token usage object when it is not found automatically. */
+    usagePath?: string;
   };
+  /** Prices per million tokens, used to compute the cost of every reply. */
+  pricing?: { inputPerMillion: number; outputPerMillion: number };
   timeoutMs: number;
   retries: RetryConfig;
   model?: string;
@@ -211,6 +268,8 @@ export interface CaseSpec {
   /** Checks run on the reply (the final reply for a conversation). */
   checks?: Check[];
   repeat?: number;
+  /** Share of repeats (0..1) that must pass for the case to pass. */
+  minPassRate?: number;
   description?: string;
   tags?: string[];
   skip?: boolean;
@@ -218,6 +277,7 @@ export interface CaseSpec {
 
 export interface SuiteDefaults {
   repeat?: number;
+  minPassRate?: number;
   checks?: Check[];
   vars?: Record<string, unknown>;
 }
@@ -240,6 +300,8 @@ export interface SuiteDefinition {
   defaults?: SuiteDefaults;
   cases?: CaseSpec[];
   embedding?: EmbeddingConfig;
+  /** Named targets for A/B testing, each the suite target with the variant's overrides applied. */
+  variants?: Record<string, TargetSpec>;
 }
 
 /** A suite after defaults are merged and relative paths are resolved. */
@@ -263,6 +325,13 @@ export interface CheckResult {
   durationMs?: number;
   error?: string;
   optional?: boolean;
+}
+
+export interface TokenUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cost?: number;
 }
 
 export interface AttemptRequest {
@@ -289,6 +358,8 @@ export interface AttemptResult {
   latencyMs: number;
   /** Time to first token, only measured for streaming responses. */
   ttftMs?: number;
+  /** Token usage reported by the endpoint. */
+  usage?: TokenUsage;
   timestamp: string;
   request: AttemptRequest;
   responseHeaders?: Record<string, string>;
@@ -323,6 +394,7 @@ export interface CaseResult {
   status: CaseStatus;
   passRate: number;
   repeat: number;
+  minPassRate?: number;
   tags: string[];
   description?: string;
   checks: CheckAggregate[];
@@ -352,6 +424,8 @@ export interface RunTotals {
   checksFailed: number;
   /** Number of individual HTTP requests issued (including retries). */
   requests: number;
+  /** Token usage summed over every attempt that reported it. */
+  usage?: TokenUsage & { attempts: number };
 }
 
 export interface RunMetadata {
@@ -375,6 +449,8 @@ export interface RunMetadata {
   endpointErrors?: string[];
   /** True when the responses came from a recording instead of the endpoint. */
   replayed?: boolean;
+  /** Name of the target variant this run used. */
+  variant?: string;
 }
 
 export interface RunResult {
@@ -390,7 +466,9 @@ export interface CaseDelta {
   id: string;
   a: CaseStatus;
   b: CaseStatus;
-  kind: 'regression' | 'fix' | 'unchanged-pass' | 'unchanged-fail' | 'new' | 'removed' | 'flaky';
+  kind: 'regression' | 'fix' | 'unchanged-pass' | 'unchanged-fail' | 'new' | 'removed' | 'flaky' | 'noise';
+  /** One-sided Fisher exact test p-value, when the comparison used a significance level. */
+  pValue?: number;
   passRateDelta: number;
   latencyP95DeltaMs: number;
   latencyP95DeltaPct: number;
@@ -438,9 +516,24 @@ export interface ComparisonResult {
   regressions: CaseDelta[];
   fixes: CaseDelta[];
   flaky: CaseDelta[];
+  /** Pass rate changes too small to be significant (only with a significance level). */
+  noise?: CaseDelta[];
+  /** Significance level used to tell regressions and fixes from noise. */
+  significance?: number;
+  /** Cases with too few repeats to ever reach the significance level. */
+  underpowered?: string[];
   newCases: CaseDelta[];
   removedCases: CaseDelta[];
   similarityDrift: Array<{ id: string; a: number; b: number; delta: number }>;
+  /** Mean tokens and cost per attempt, when both runs reported usage. */
+  usage?: {
+    tokensA: number;
+    tokensB: number;
+    tokensDeltaPct: number;
+    costA?: number;
+    costB?: number;
+    costDeltaPct?: number;
+  };
   thresholds: ThresholdSpec[];
   violations: ThresholdViolation[];
   hasRegressions: boolean;

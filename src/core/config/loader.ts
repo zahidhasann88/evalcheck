@@ -13,7 +13,8 @@ import type {
   SuiteDefaults,
   TargetSpec,
 } from '../types.js';
-import { SuiteDefinitionSchema, type SuiteDefinitionOutput } from './schema.js';
+import { SuiteDefinitionSchema, TargetSpecSchema, type SuiteDefinitionOutput } from './schema.js';
+import { applySharedConfig, findSharedConfig, loadSharedConfig, mergeTargets, type SharedConfig } from './shared.js';
 
 export const DEFAULT_EMBEDDING_MODEL = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2';
 
@@ -22,12 +23,21 @@ type YamlDocument = ReturnType<typeof parseDocument>;
 export interface LoadSuiteOptions {
   /** Directory used to resolve relative paths (defaults to the suite's dir). */
   baseDir?: string;
+  /**
+   * Shared config file. By default evalcheck.config.(yaml|yml|json) next to the suite is used;
+   * `false` disables it.
+   */
+  config?: string | false;
+  /** An already loaded shared config, used by parseSuiteSource. */
+  shared?: SharedConfig;
   /** Environment used for `${VAR}` interpolation during validation. */
   env?: NodeJS.ProcessEnv;
 }
 
 export interface LoadedSuite {
   suite: Suite;
+  /** Absolute path of the shared config file that was applied. */
+  configPath?: string;
   /** Hash over the raw, pre-interpolation suite definition. */
   hash: string;
   sourcePath: string;
@@ -46,8 +56,12 @@ export async function loadSuite(
       { path: '', message: err instanceof Error ? err.message : String(err) },
     ]);
   }
-  const parsed = parseSuiteSource(raw, absolute, options);
-  return parsed;
+  let shared = options.shared;
+  if (!shared && options.config !== false) {
+    const configFile = options.config ?? (await findSharedConfig(absolute));
+    if (configFile) shared = await loadSharedConfig(configFile);
+  }
+  return parseSuiteSource(raw, absolute, { ...options, ...(shared ? { shared } : {}) });
 }
 
 export function parseSuiteSource(
@@ -96,6 +110,8 @@ export function parseSuiteSource(
     value = doc.toJS({ maxAliasCount: 100 });
   }
 
+  if (options.shared) value = applySharedConfig(options.shared, value);
+
   const result = SuiteDefinitionSchema.safeParse(value, PARSE_PARAMS);
   if (!result.success) {
     const issues = result.error.issues.map((issue) => toConfigIssue(issue, doc, lineCounter, sourcePath));
@@ -105,7 +121,15 @@ export function parseSuiteSource(
   const definition = result.data as SuiteDefinitionOutput;
   assertReferences(definition, doc, lineCounter, sourcePath);
   const suite = normalizeSuite(definition, { baseDir, sourcePath: absolute });
-  return { suite, hash: hashSuite(stripUndefined({ ...definition, $schema: undefined })), sourcePath: absolute };
+  if (definition.variants) {
+    suite.variants = buildVariants(value as Record<string, unknown>, definition.variants, doc, lineCounter, sourcePath);
+  }
+  return {
+    suite,
+    hash: hashSuite(stripUndefined({ ...definition, $schema: undefined })),
+    sourcePath: absolute,
+    ...(options.shared ? { configPath: options.shared.path } : {}),
+  };
 }
 
 export interface NormalizeOptions {
@@ -146,6 +170,7 @@ export function normalizeSuite(definition: SuiteDefinitionOutput, options: Norma
     ...(defaults.repeat !== undefined ? {} : {}),
     defaults: {
       ...(defaults.repeat !== undefined ? { repeat: defaults.repeat } : {}),
+      ...(defaults.minPassRate !== undefined ? { minPassRate: defaults.minPassRate } : {}),
       ...(defaults.checks ? { checks: defaults.checks } : {}),
       ...(defaults.vars ? { vars: defaults.vars } : {}),
     },
@@ -155,6 +180,30 @@ export function normalizeSuite(definition: SuiteDefinitionOutput, options: Norma
     ...(options.sourcePath ? { sourcePath: options.sourcePath } : {}),
   };
   return suite;
+}
+
+function buildVariants(
+  raw: Record<string, unknown>,
+  variants: Record<string, unknown>,
+  doc: YamlDocument,
+  lineCounter: LineCounter,
+  sourcePath: string,
+): Record<string, TargetSpec> {
+  const rawVariants = raw.variants as Record<string, unknown>;
+  const out: Record<string, TargetSpec> = {};
+  const issues: ConfigIssue[] = [];
+  for (const name of Object.keys(variants)) {
+    const parsed = TargetSpecSchema.safeParse(mergeTargets(raw.target, rawVariants[name]), PARSE_PARAMS);
+    if (parsed.success) {
+      out[name] = normalizeTarget(parsed.data);
+      continue;
+    }
+    for (const issue of parsed.error.issues) {
+      issues.push(toConfigIssue({ ...issue, path: ['variants', name, ...issue.path] }, doc, lineCounter, sourcePath));
+    }
+  }
+  if (issues.length > 0) throw new ConfigError(`Invalid suite file "${sourcePath}"`, issues);
+  return out;
 }
 
 function normalizeTarget(target: SuiteDefinitionOutput['target']): TargetSpec {
@@ -173,7 +222,9 @@ function normalizeTarget(target: SuiteDefinitionOutput['target']): TargetSpec {
           ? 'sse'
           : false,
       ...(target.response?.status !== undefined ? { status: target.response.status } : {}),
+      ...(target.response?.usagePath ? { usagePath: target.response.usagePath } : {}),
     },
+    ...(target.pricing ? { pricing: target.pricing } : {}),
     timeoutMs: target.timeoutMs,
     retries: target.retries ?? { max: 0, on: [], backoffMs: 0 },
     ...(target.model ? { model: target.model } : {}),
@@ -204,6 +255,9 @@ function normalizeCase(
     vars: { ...(defaults.vars ?? {}), ...(caseSpec.vars ?? {}) },
     ...(checks.length > 0 ? { checks } : {}),
     ...(caseSpec.repeat ?? defaults.repeat ? { repeat: caseSpec.repeat ?? defaults.repeat } : {}),
+    ...((caseSpec.minPassRate ?? defaults.minPassRate) !== undefined
+      ? { minPassRate: caseSpec.minPassRate ?? defaults.minPassRate }
+      : {}),
     ...(caseSpec.description ? { description: caseSpec.description } : {}),
     ...(caseSpec.tags ? { tags: caseSpec.tags } : {}),
     ...(caseSpec.skip !== undefined ? { skip: caseSpec.skip } : {}),
@@ -225,6 +279,11 @@ function normalizeCheck(check: Check, baseDir: string): Check {
       if (next.modelPath) next.modelPath = path.resolve(baseDir, next.modelPath);
       return next;
     }
+    case 'any_of':
+    case 'all_of':
+      return { ...check, checks: check.checks.map((inner) => normalizeCheck(inner, baseDir)) };
+    case 'not':
+      return { ...check, check: normalizeCheck(check.check, baseDir) };
     default:
       return check;
   }
@@ -266,28 +325,35 @@ function assertReferences(
     }
   });
 
-  for (const group of groups) {
-    group.checks.forEach((check, index) => {
-      if (check.type === 'tool_call' && !check.name && check.called !== false) {
-        const segments = [...group.path, String(index)];
-        const location = locate(doc, lineCounter, segments);
-        issues.push({
-          path: segments.join('.'),
-          message: 'tool_call check requires "name" (or "called: false" to expect no tool call)',
-          ...(location ? { location: `${path.basename(sourcePath)}: ${location}` } : {}),
-        });
-        return;
-      }
-      if (check.type !== 'similarity' && check.type !== 'lexical_overlap') return;
-      if (check.reference !== undefined || check.references !== undefined) return;
-      const segments = [...group.path, String(index)];
-      const location = locate(doc, lineCounter, segments);
-      issues.push({
-        path: segments.join('.'),
-        message: `${check.type} check requires "reference" or "references"`,
-        ...(location ? { location: `${path.basename(sourcePath)}: ${location}` } : {}),
-      });
+  const report = (segments: string[], message: string): void => {
+    const location = locate(doc, lineCounter, segments);
+    issues.push({
+      path: segments.join('.'),
+      message,
+      ...(location ? { location: `${path.basename(sourcePath)}: ${location}` } : {}),
     });
+  };
+
+  const visit = (check: Check, segments: string[]): void => {
+    if (check.type === 'any_of' || check.type === 'all_of') {
+      check.checks.forEach((inner, index) => visit(inner, [...segments, 'checks', String(index)]));
+      return;
+    }
+    if (check.type === 'not') {
+      visit(check.check, [...segments, 'check']);
+      return;
+    }
+    if (check.type === 'tool_call' && !check.name && check.called !== false) {
+      report(segments, 'tool_call check requires "name" (or "called: false" to expect no tool call)');
+      return;
+    }
+    if (check.type !== 'similarity' && check.type !== 'lexical_overlap') return;
+    if (check.reference !== undefined || check.references !== undefined) return;
+    report(segments, `${check.type} check requires "reference" or "references"`);
+  };
+
+  for (const group of groups) {
+    group.checks.forEach((check, index) => visit(check, [...group.path, String(index)]));
   }
 
   if (issues.length > 0) {
@@ -365,6 +431,15 @@ export function safeParseSuite(raw: unknown): z.ZodSafeParseResult<SuiteDefiniti
   return SuiteDefinitionSchema.safeParse(raw, PARSE_PARAMS);
 }
 
+/** Every check of a case, including those inside turns and inside any_of, all_of and not. */
 export function allCaseChecks(caseSpec: CaseSpec): Check[] {
-  return [...(caseSpec.checks ?? []), ...(caseSpec.turns ?? []).flatMap((turn) => turn.checks ?? [])];
+  return flattenChecks([...(caseSpec.checks ?? []), ...(caseSpec.turns ?? []).flatMap((turn) => turn.checks ?? [])]);
+}
+
+function flattenChecks(checks: Check[]): Check[] {
+  return checks.flatMap((check) => {
+    if (check.type === 'any_of' || check.type === 'all_of') return [check, ...flattenChecks(check.checks)];
+    if (check.type === 'not') return [check, ...flattenChecks([check.check])];
+    return [check];
+  });
 }

@@ -33,6 +33,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The mock server answers follow-up questions about an order, returns tool calls, and serves
   OpenAI (`/v1/chat/completions`) and Anthropic (`/v1/messages`) shaped endpoints.
 - Example suites for conversations and tool calls.
+- **`minPassRate`** - a case (or `defaults`, or `--min-pass-rate`) passes when at least this
+  share of its repeats pass, instead of being reported as flaky.
+- **`any_of`, `all_of` and `not` checks** - combine and invert other checks, nested as deep as
+  needed.
+- **Token usage and cost** - usage is read from OpenAI, Anthropic and Gemini responses (also
+  streamed) or from `target.response.usagePath`, and `target.pricing` turns it into a cost. Usage
+  is stored per attempt and in the run totals, shown in every report, compared between runs and
+  usable in `tokens` and `cost` thresholds. The new `usage` check sets a token or cost budget.
+- **Several suites per run** - `evalcheck run` and `evalcheck validate` accept several suite
+  files and directories. Suites share settings through `evalcheck.config.yaml` next to them (or
+  `--config`), with its own JSON Schema (`dist/config.schema.json`, `evalcheck schema --config`).
+- **`refusal` and `language` checks** - detect refusals such as "I'm sorry, but I can't help with
+  that" (or require one with `refused: true`), and check the language of an answer without a
+  model.
+- `pnpm test:coverage`, and CI now runs on Windows as well as Linux and reports coverage.
+- **Statistical compare** - `--significance 0.05` on `compare` and `run --against` reports a
+  regression or fix only when a one-sided Fisher exact test over the repeats is below the level;
+  smaller changes are listed as within noise, with a note for cases with too few repeats.
+- **A/B testing** - `variants` in a suite override parts of the target; `evalcheck run` runs every
+  variant (or `--variant <names>`) and prints a side by side table with pass rate, latency,
+  tokens and cost, also in the Markdown report.
+- **`evalcheck history`** - pass rate, failures, latency, tokens and cost of every stored run,
+  grouped by suite and variant, as a table, Markdown, JSON or an HTML page with charts.
 
 ### Security
 
