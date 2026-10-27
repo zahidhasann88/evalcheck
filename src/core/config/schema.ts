@@ -194,8 +194,8 @@ export const TargetSpecSchema = z
       .string()
       .regex(/^[A-Za-z]+$/, 'target.method must be an HTTP verb')
       .default('POST'),
-    headers: z.record(z.string()).optional(),
-    query: z.record(z.string()).optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+    query: z.record(z.string(), z.string()).optional(),
     body: z.unknown().optional(),
     preset: RequestPresetSchema.default('none'),
     response: ResponseSpecSchema.optional(),
@@ -212,7 +212,7 @@ export const DefaultsSchema = z
   .object({
     repeat: z.number().int().min(1).max(100).optional(),
     checks: z.array(CheckSchema).optional(),
-    vars: z.record(z.unknown()).optional(),
+    vars: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 
@@ -223,7 +223,7 @@ export const CaseSpecSchema = z
       .min(1, 'case id must not be empty')
       .regex(/^[A-Za-z0-9._-]+$/, 'case id may only contain letters, digits, dot, underscore and dash'),
     input: z.string().optional(),
-    vars: z.record(z.unknown()).optional(),
+    vars: z.record(z.string(), z.unknown()).optional(),
     checks: z.array(CheckSchema).optional(),
     repeat: z.number().int().min(1).max(100).optional(),
     description: z.string().optional(),

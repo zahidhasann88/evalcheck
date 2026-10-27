@@ -15,7 +15,7 @@ export function parseRunFile(content: string): RunResult {
   try {
     parsed = JSON.parse(content);
   } catch (err) {
-    throw new Error(`Invalid JSON run file: ${(err as Error).message}`);
+    throw new Error(`Invalid JSON run file: ${(err as Error).message}`, { cause: err });
   }
   if (typeof parsed !== 'object' || parsed === null) {
     throw new Error('Invalid run file: expected a JSON object');

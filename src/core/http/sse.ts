@@ -12,8 +12,8 @@ export function parseSseChunk(buffer: string): { events: SseEvent[]; rest: strin
   for (;;) {
     const lf = rest.indexOf('\n\n', searchFrom);
     const crlf = rest.indexOf('\r\n\r\n', searchFrom);
-    let index = -1;
-    let size = 0;
+    let index: number;
+    let size: number;
     if (lf !== -1 && (crlf === -1 || lf < crlf)) {
       index = lf;
       size = 2;

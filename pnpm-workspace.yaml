@@ -3,3 +3,8 @@ allowBuilds:
   onnxruntime-node: true
   sharp: true
   protobufjs: true
+
+overrides:
+  sharp: ^0.35.5
+  fast-uri: ^3.1.9
+  esbuild: ^0.28.1

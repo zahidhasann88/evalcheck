@@ -111,15 +111,32 @@ function pickExport(mod: Record<string, unknown>, absolute: string, exportName: 
   return candidate as CustomCheckFn;
 }
 
+type TypeScriptCompiler = typeof import('@typescript/typescript6');
+
+// TypeScript 7 ships no JavaScript compiler API; its `@typescript/typescript6`
+// compatibility package does.
+const TYPESCRIPT_CANDIDATES = ['typescript', '@typescript/typescript6'];
+
+function loadTypeScriptCompiler(require: NodeJS.Require): TypeScriptCompiler | undefined {
+  for (const name of TYPESCRIPT_CANDIDATES) {
+    try {
+      const ts = require(name) as Partial<TypeScriptCompiler>;
+      if (typeof ts.transpileModule === 'function') return ts as TypeScriptCompiler;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return undefined;
+}
+
 async function transpileTypeScript(absolute: string): Promise<string> {
   const require = createRequire(import.meta.url);
-  let ts: typeof import('typescript');
-  try {
-    ts = require('typescript') as typeof import('typescript');
-  } catch {
+  const ts = loadTypeScriptCompiler(require);
+  if (!ts) {
     throw new Error(
-      `Cannot import the TypeScript custom check "${absolute}": the optional "typescript" package is not installed. ` +
-        'Write the check in JavaScript (.mjs) or install typescript as a dev dependency.',
+      `Cannot import the TypeScript custom check "${absolute}": no TypeScript compiler API is available. ` +
+        'Write the check in JavaScript (.mjs), or install typescript 5 or 6 (with TypeScript 7, also install ' +
+        '@typescript/typescript6) as a dev dependency.',
     );
   }
   const source = require('node:fs').readFileSync(absolute, 'utf8') as string;

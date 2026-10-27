@@ -9,6 +9,3 @@ runs/
 !.env.example
 .turbo/
 .tmp/
-
-# Local build notes
-build-docs.txt

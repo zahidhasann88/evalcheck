@@ -96,7 +96,7 @@ export function parseSuiteSource(
     value = doc.toJS({ maxAliasCount: 100 });
   }
 
-  const result = SuiteDefinitionSchema.safeParse(value);
+  const result = SuiteDefinitionSchema.safeParse(value, PARSE_PARAMS);
   if (!result.success) {
     const issues = result.error.issues.map((issue) => toConfigIssue(issue, doc, lineCounter, sourcePath));
     throw new ConfigError(`Invalid suite file "${sourcePath}"`, issues);
@@ -261,6 +261,12 @@ function assertReferences(
   }
 }
 
+// Zod 4 reports a missing key as "Invalid input: expected string, received undefined";
+// keep the shorter message that config errors have always used.
+const PARSE_PARAMS: z.core.ParseContext<z.core.$ZodIssue> = {
+  error: (issue) => (issue.code === 'invalid_type' && issue.input === undefined ? 'Required' : undefined),
+};
+
 function toConfigIssue(
   issue: ZodIssue,
   doc: YamlDocument,
@@ -321,6 +327,6 @@ function stripUndefined<T>(value: T): T {
 }
 
 /** Parses a suite and returns only the definition (useful for `validate`). */
-export function safeParseSuite(raw: unknown): z.SafeParseReturnType<unknown, SuiteDefinitionOutput> {
-  return SuiteDefinitionSchema.safeParse(raw);
+export function safeParseSuite(raw: unknown): z.ZodSafeParseResult<SuiteDefinitionOutput> {
+  return SuiteDefinitionSchema.safeParse(raw, PARSE_PARAMS);
 }

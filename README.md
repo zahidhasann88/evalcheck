@@ -30,7 +30,7 @@ answer must follow. evalcheck asks your API those questions and checks every ans
 
 ## Install
 
-Requires Node.js 20 or later.
+Requires Node.js 22.19 or later.
 
 ```bash
 npm install -g evalcheck
