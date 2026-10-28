@@ -23,7 +23,7 @@ export function buildProgram(): Command {
   program
     .name('evalcheck')
     .description(
-      'Deterministic regression testing for AI-powered HTTP endpoints. No LLM calls, no judge models.',
+      'Deterministic regression testing for AI-powered HTTP endpoints.',
     )
     .version(readVersion())
     .showHelpAfterError()

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-28
+
+### Changed
+
+- Shorter package description, CLI help text and README introduction.
+
 ## [0.2.0] - 2026-10-28
 
 ### Added
@@ -47,8 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files and directories. Suites share settings through `evalcheck.config.yaml` next to them (or
   `--config`), with its own JSON Schema (`dist/config.schema.json`, `evalcheck schema --config`).
 - **`refusal` and `language` checks** - detect refusals such as "I'm sorry, but I can't help with
-  that" (or require one with `refused: true`), and check the language of an answer without a
-  model.
+  that" (or require one with `refused: true`), and check the language of an answer.
 - `pnpm test:coverage`, and CI now runs on Windows as well as Linux and reports coverage.
 - **Statistical compare** - `--significance 0.05` on `compare` and `run --against` reports a
   regression or fix only when a one-sided Fisher exact test over the repeats is below the level;
@@ -125,6 +130,7 @@ The first release.
 - **Examples** - a chatbot suite, a JSON output suite, a streaming suite and
   a bundled mock endpoint.
 
-[Unreleased]: https://github.com/zahidhasann88/evalcheck/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/zahidhasann88/evalcheck/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/zahidhasann88/evalcheck/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/zahidhasann88/evalcheck/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/zahidhasann88/evalcheck/releases/tag/v0.1.0

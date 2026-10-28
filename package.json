@@ -1,7 +1,7 @@
 {
   "name": "evalcheck",
-  "version": "0.2.0",
-  "description": "Deterministic, rule-based regression testing for AI-powered HTTP endpoints. No LLM calls, no judge models.",
+  "version": "0.2.1",
+  "description": "Deterministic, rule-based regression testing for AI-powered HTTP endpoints.",
   "keywords": [
     "ai",
     "eval",

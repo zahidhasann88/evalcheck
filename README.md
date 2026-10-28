@@ -2,7 +2,7 @@
 
 Repeatable test suites for AI endpoints. evalcheck sends your test cases to any HTTP API,
 grades every answer with deterministic, rule-based checks and reports what changed since the
-last good run. It never calls an LLM to judge answers.
+last good run.
 
 ## Install
 
